@@ -15,3 +15,5 @@ User-selected revision: use the supplied cream T/red UAV version with transparen
 Clarification: all navy fills must be removed, including bottom bands. Active header asset restored to web/public/brand/terraguavd-mark-transparent.png (cream/red only).
 
 Exact-reference revision: built-in imagegen edited the latest attached straight-stem logo, removing only navy bottom terrain fills to transparency while retaining cream/red shapes. Active asset: web/public/brand/terraguavd-mark-final.png. Prompt: preserve exact silhouette and straight stem; replace bottom navy bands with transparent alpha, preserve cream contours and red drone/wave, no text or navy.
+
+Color-inverted revision using built-in imagegen. Prompt: change every originally navy region to cream #efece0; change every originally cream region to transparent alpha; preserve original red UAV and wave, geometry and proportions. Active asset: web/public/brand/terraguavd-mark-cream-fill.png.

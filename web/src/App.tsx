@@ -210,7 +210,7 @@ export default function App() {
         <a className="brand" href="/">
           <img
             className="brand-mark"
-            src="/brand/terraguavd-mark-final.png"
+            src="/brand/terraguavd-mark-cream-fill.png"
             alt=""
           />
           TerraGuavd
