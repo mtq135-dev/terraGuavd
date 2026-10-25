@@ -1,0 +1,21 @@
+name: Isolated PX4 Gazebo end-to-end
+on: workflow_dispatch
+jobs:
+  sitl:
+    timeout-minutes: 25
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r backend/requirements-lock.txt -e './backend[test]' -e ./detection
+      - run: cp .env.example .env && docker compose up -d --build --wait db simulation
+      - run: python backend/tests/run_integration.py --sitl
+      - if: failure()
+        run: docker compose logs simulation
+      - if: always()
+        run: docker compose down

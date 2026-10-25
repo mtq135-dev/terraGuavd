@@ -1,0 +1,34 @@
+name: terraguavd
+services:
+  simulation:
+    build: ./simulation
+    environment:
+      SIMULATION_SECRET: ${SIMULATION_SECRET:?Run scripts/setup.ps1}
+      HEADLESS: "1"
+      PX4_SIM_MODEL: gz_x500
+    ports:
+      - "127.0.0.1:8090:8090"
+    healthcheck:
+      test: [CMD, /opt/terraguavd/bin/python, -c, "import socket; socket.create_connection(('127.0.0.1',8090),3).close()"]
+      interval: 3s
+      timeout: 4s
+      retries: 30
+    init: true
+    stop_grace_period: 20s
+  db:
+    build: ./infrastructure/database
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Run scripts/setup.ps1 first}
+      POSTGRES_USER: ${POSTGRES_USER:?Run scripts/setup.ps1 first}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/setup.ps1 first}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+volumes:
+  postgres_data:

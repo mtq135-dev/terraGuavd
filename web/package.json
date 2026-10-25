@@ -1,0 +1,33 @@
+{
+  "name": "terraguavd-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "format": "prettier --write src vite.config.ts tsconfig.json package.json index.html",
+    "format:check": "prettier --check src vite.config.ts tsconfig.json package.json index.html"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.2.0",
+    "@types/leaflet": "^1.9.22",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^26.0.0",
+    "prettier": "^3.9.10",
+    "typescript": "~5.7.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}

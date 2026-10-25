@@ -1,0 +1,15 @@
+name: terraguavd_field
+description: TerraGuavd field monitoring scaffold
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+dependencies:
+  http: ^1.3.0
+  flutter:
+    sdk: flutter
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+flutter:
+  uses-material-design: true

@@ -1,0 +1,7 @@
+# Field Personnel Flutter scaffold
+
+Flutter source includes the reference-based navy/cream/red Field Personnel interface, login/logout, periodic refresh, assigned mission cards, recorded SITL telemetry, interactive geographic schematic, synthetic potential-target details, survey history, events and reason-based stop requests. Requests connect to the shared assignment-scoped FastAPI APIs. Stop requests notify the operator without commanding PX4. No camera features. Native source remains uncompiled in this environment; use the browser-tested mobile-first React workspace for immediate local operation.
+
+Flutter SDK and platform runners are not bundled or tested. With Flutter installed, back up lib/main.dart, run `flutter create --project-name terraguavd_field --platforms android,ios .` here to generate runners, restore lib/main.dart if replaced, then `flutter pub get`, `flutter analyze`, `flutter test` and `flutter run --dart-define=API_BASE_URL=https://your-development-api`. iOS requires macOS. Use a trusted HTTPS development endpoint for a real device; do not expose this localhost foundation publicly. Emulator networking and development-only transport configuration depend on the generated runner. Tokens remain in memory; reload/restart requires login.
+
+The React app also provides a working mobile-first Field Personnel workspace for immediate local browser testing; resize below 600px to see bottom navigation. Native Flutter source has not been compiled because Flutter is unavailable in the current environment.
