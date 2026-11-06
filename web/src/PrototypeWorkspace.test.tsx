@@ -5,7 +5,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, type Mock, vi } from "vitest";
 import PrototypeWorkspace from "./PrototypeWorkspace";
 import { Mission, MissionDetail } from "./operations-api";
 
@@ -46,7 +46,7 @@ const mission: Mission = {
   created_at: "2026-10-17T10:00:00Z",
 };
 let detail: MissionDetail;
-let fetcher: ReturnType<typeof vi.fn>;
+let fetcher: Mock<(url: string, options?: RequestInit) => Promise<unknown>>;
 beforeEach(() => {
   detail = {
     mission: { ...mission },
@@ -121,6 +121,79 @@ it("selects clearly labelled mock sensor data for new web drafts", () => {
       name: "Use mock GPR/metal sensor data and synthetic detections",
     }),
   ).toBeChecked();
+});
+it("selects the sole assignment and saves an outside draft with approval required", async () => {
+  const fallback = fetcher.getMockImplementation()!;
+  const outside = {
+    required: true,
+    outside_geometry: mission.boundary,
+    outside_m2: 45,
+  };
+  const approval = {
+    ...outside,
+    status: null,
+    can_execute: false,
+    warning: "Supervisor approval is required.",
+    assignment: null,
+    request: null,
+    history: [],
+  };
+  fetcher.mockImplementation(async (url: string, options?: RequestInit) => {
+    if (url.includes("/survey-areas?"))
+      return {
+        ok: true,
+        json: async () => [
+          {
+            id: "assigned-area",
+            name: "Assigned sector",
+            operator_id: "operator",
+            revision: 1,
+            progress: { coverage_percent: 0 },
+          },
+        ],
+      };
+    if (url.endsWith("/mission-users"))
+      return { ok: true, json: async () => [] };
+    if (url.endsWith("/mission-approval-preview"))
+      return { ok: true, json: async () => outside };
+    if (url.endsWith("/missions") && options?.method === "POST") {
+      detail.mission = {
+        ...mission,
+        id: "outside-draft",
+        assignment_id: "assigned-area",
+      };
+      detail.approval = approval;
+      return { ok: true, json: async () => ({ ...detail.mission, approval }) };
+    }
+    return fallback(url, options);
+  });
+  show("mission_operator", "operator", "Mission Planning");
+  await waitFor(() =>
+    expect(screen.getByLabelText("Assigned survey area")).toHaveValue(
+      "assigned-area",
+    ),
+  );
+  expect(await screen.findByText(/You can save it as a draft/)).toBeVisible();
+  const save = screen.getByRole("button", { name: "Save draft mission" });
+  expect(save).toBeEnabled();
+  fireEvent.click(save);
+  expect(await screen.findByText(/Draft saved/)).toBeVisible();
+  expect(
+    await screen.findByRole("button", { name: "Request Approval" }),
+  ).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Validate plan" })).toBeDisabled();
+  expect(
+    screen.getByRole("button", { name: "Start simulated mission" }),
+  ).toBeDisabled();
+  const saveCall = fetcher.mock.calls.find(
+    ([url, options]) =>
+      url === "/api/v1/missions" && options?.method === "POST",
+  );
+  expect(JSON.parse(String(saveCall?.[1]?.body))).toMatchObject({
+    assignment_id: "assigned-area",
+    boundary: expect.arrayContaining([expect.any(Array)]),
+    waypoints: expect.arrayContaining([expect.any(Array)]),
+  });
 });
 function show(role: string, id: string, view = "Dashboard") {
   render(

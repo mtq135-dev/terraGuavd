@@ -91,6 +91,7 @@ export default function PrototypeWorkspace({
   const [waypointText, setWaypointText] = useState(JSON.stringify(waypoints));
   const [detail, setDetail] = useState<MissionDetail>();
   const [error, setError] = useState("");
+  const [planError, setPlanError] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [people, setPeople] = useState<Person[]>([]);
@@ -111,11 +112,19 @@ export default function PrototypeWorkspace({
   const [connection, setConnection] = useState("No mission selected");
   const operator = user.role === "mission_operator";
   const areaAccess = operator || user.role === "supervisor";
-  const parent = areas.find((area) => area.id === assignmentId);
+  const assignedAreas = areas.filter((area) => area.operator_id === user.id);
+  const parent = assignedAreas.find((area) => area.id === assignmentId);
   const planning =
     operator &&
     view === "Mission Planning" &&
     user.permissions.includes("missions:plan");
+  const soleAssignmentId =
+    assignedAreas.length === 1 ? assignedAreas[0].id : undefined;
+  useEffect(() => {
+    if (planning && !assignmentId && soleAssignmentId) {
+      setAssignmentId(soleAssignmentId);
+    }
+  }, [planning, assignmentId, soleAssignmentId]);
   const approvalPreview = useApprovalPreview(
     token,
     planning ? parent?.id : undefined,
@@ -265,6 +274,7 @@ export default function PrototypeWorkspace({
     const form = new FormData(event.currentTarget);
     setBusy(true);
     setError("");
+    setPlanError("");
     try {
       if (!parent)
         throw new Error(
@@ -307,13 +317,14 @@ export default function PrototypeWorkspace({
           : "Plan saved. Validate, then explicitly start when ready.",
       );
     } catch (e) {
-      setError((e as Error).message);
+      setPlanError((e as Error).message);
     } finally {
       setBusy(false);
     }
   }
   function editPlan(mission: Mission) {
     if (!mission.assignment_id || mission.plan_revision === undefined) return;
+    setPlanError("");
     setEditingMission(mission);
     setAssignmentId(mission.assignment_id);
     setBoundaryText(JSON.stringify(mission.boundary.coordinates[0]));
@@ -412,6 +423,7 @@ export default function PrototypeWorkspace({
           onLoadMore={() => setAreaPages(areaPages + 1)}
           hasMore={areas.length === areaPages * 100}
           onPlan={(area) => {
+            setPlanError("");
             setEditingMission(undefined);
             setAssignmentId(area.id);
             setBoundaryText("[]");
@@ -477,33 +489,24 @@ export default function PrototypeWorkspace({
                       <select
                         required
                         disabled={!!editingMission}
-                        value={assignmentId}
+                        value={parent?.id ?? ""}
                         onChange={(event) => {
+                          setPlanError("");
                           setAssignmentId(event.target.value);
-                          setBoundaryText("[]");
-                          setWaypointText("[]");
                         }}
                       >
-                        <option value="">
+                        <option value="" disabled>
                           Select a Supervisor-assigned area
                         </option>
-                        {areas
-                          .filter((area) => area.operator_id === user.id)
-                          .map((area) => (
-                            <option key={area.id} value={area.id}>
-                              {area.name} ·{" "}
-                              {area.progress.coverage_percent.toFixed(2)}%
-                              completed
-                            </option>
-                          ))}
+                        {assignedAreas.map((area) => (
+                          <option key={area.id} value={area.id}>
+                            {area.name} ·{" "}
+                            {area.progress.coverage_percent.toFixed(2)}%
+                            completed
+                          </option>
+                        ))}
                       </select>
                     </label>
-                    {!areas.length && (
-                      <p className="panel-note">
-                        A Supervisor must assign a survey area before you can
-                        create a new mission.
-                      </p>
-                    )}
                     <div className="grid two">
                       <label>
                         Mission name
@@ -519,7 +522,7 @@ export default function PrototypeWorkspace({
                         <input
                           name="area_id"
                           required
-                          pattern="[a-zA-Z0-9_-]+"
+                          pattern={String.raw`[a-zA-Z0-9_\-]+`}
                           defaultValue={
                             editingMission?.area_id ?? "sitl-area-a"
                           }
@@ -636,7 +639,25 @@ export default function PrototypeWorkspace({
                       mission runs on save. Synthetic features are experimental
                       fixtures, not physical sensor measurements.
                     </p>
-                    <button className="primary" disabled={busy || !parent}>
+                    {!parent && (
+                      <p className="panel-note" id="mission-assignment-hint">
+                        {assignedAreas.length
+                          ? "Select an assigned survey area above to save this plan."
+                          : "A Supervisor must assign you a survey area before you can save a mission."}
+                      </p>
+                    )}
+                    {planError && (
+                      <p role="alert" className="error">
+                        {planError}
+                      </p>
+                    )}
+                    <button
+                      className="primary"
+                      disabled={busy || !parent}
+                      aria-describedby={
+                        parent ? undefined : "mission-assignment-hint"
+                      }
+                    >
                       {editingMission
                         ? "Save revised plan"
                         : "Save draft mission"}
@@ -645,6 +666,7 @@ export default function PrototypeWorkspace({
                       <button
                         type="button"
                         onClick={() => {
+                          setPlanError("");
                           setEditingMission(undefined);
                           setBoundaryText("[]");
                           setWaypointText("[]");
