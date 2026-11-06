@@ -1,0 +1,33 @@
+@startuml
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 19
+skinparam activityBackgroundColor #F7F9FB
+skinparam activityBorderColor #4B5966
+|Detection Analyst|
+start
+:Select recorded potential detection;
+:Review sensor features, location and provenance;
+:Enter assessment and notes;
+|FastAPI|
+if (Authorized and detection accessible?) then (yes)
+else (no)
+  :Reject review;
+  stop
+endif
+if (Assessment and notes valid?) then (yes)
+  :Store analyst review;
+  :Append audit event;
+else (no)
+  :Return validation error;
+  stop
+endif
+|Detection Analyst|
+:View saved assessment;
+note right
+  Synthetic provenance and experimental version are retained.
+  An assessment does not verify a landmine or clear ground.
+end note
+stop
+@enduml

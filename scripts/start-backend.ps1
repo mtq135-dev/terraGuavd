@@ -2,8 +2,8 @@ $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 if (-not (Test-Path .env) -or -not (Test-Path .venv/Scripts/python.exe)) { throw 'Run .\scripts\setup.ps1 first' }
 & ./scripts/configure-local.ps1
-docker compose up -d --build --wait --wait-timeout 180 db simulation
-if ($LASTEXITCODE -ne 0) { throw 'Database or simulator service startup failed. Check Docker Desktop / WSL 2, ports 5432/8090, and build logs.' }
+docker compose up -d --build --wait --wait-timeout 180 db simulation simulation-2 simulation-3
+if ($LASTEXITCODE -ne 0) { throw 'Database or simulator service startup failed. Check Docker Desktop / WSL 2, ports 5432/8090/8091/8092, and build logs.' }
 $python = Join-Path (Get-Location) '.venv/Scripts/python.exe'
 Push-Location backend
 try {

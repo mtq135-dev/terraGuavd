@@ -1,0 +1,58 @@
+@startuml
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 19
+skinparam sequenceMessageAlign center
+skinparam ParticipantPadding 20
+skinparam maxMessageSize 280
+skinparam BoxPadding 10
+hide footbox
+actor Supervisor as S
+boundary "Web interface" as UI
+control "FastAPI" as API
+database "Store" as DB
+actor "Mission Operator" as O
+S -> UI : Submit area polygon and operator
+UI -> API : Create survey area assignment
+API -> API : Check Supervisor permission, operator,\narea size and polygon validity
+alt Submission rejected
+  API --> UI : Validation / access error
+else Assignment accepted
+  API -> DB : Save assignment at revision 1;\nappend revision snapshot and audit event
+  API --> UI : Assigned survey area
+end
+O -> UI : Select assigned area and registered UAV
+loop Each survey sector
+  O -> UI : Draw rectangle, circle or free shape; edit handles
+  UI -> UI : Retain previous sector drafts; Undo / Redo
+  UI -> API : Preview survey lanes and proposed boundary
+  API -> API : Validate shape, connected route and assignment
+  API --> UI : Lane preview or validation feedback
+end
+O -> UI : Select sector and save its UAV-specific plan
+UI -> API : Save sub-mission draft
+API -> DB : Lock parent assignment; check operator
+API -> API : Check geometry and flight limits;\narea contains boundary; boundary contains route
+alt Draft rejected
+  API --> UI : Error; no mission created
+else Draft accepted
+  API -> DB : Save DRAFT mission and creation records
+  API --> UI : DRAFT mission
+  O -> UI : Request plan validation
+  UI -> API : Validate mission
+  API -> DB : Lock parent before mission
+  API -> API : Check assigned operator, state,\ngeometry and parent containment again
+  alt Validation fails
+    API --> UI : Validation error; no flight
+  else Validation succeeds
+    API -> DB : Set READY; append ready mission event
+    API --> UI : READY; explicit start available
+  end
+end
+note over API, DB
+  Reassignment moves DRAFT / READY missions to the new operator
+  as DRAFT. Active linked missions block assignment edits.
+  FR-13–FR-27; creation and validation never initiate flight.
+end note
+@enduml

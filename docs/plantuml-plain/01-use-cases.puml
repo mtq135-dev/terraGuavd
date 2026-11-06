@@ -1,0 +1,150 @@
+' Five partial views of one system. Repeated C1-C4 are the same shared goals.
+' All 14 original goals and permission conditions are preserved.
+
+@startuml
+!pragma layout smetana
+left to right direction
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 28
+skinparam actorStyle stickman
+skinparam packageStyle rectangle
+actor "Administrator" as Role
+rectangle "TerraGuavd | Administration" {
+ package "Role-specific goals" {
+  usecase "Manage accounts\nand access" as A1
+  usecase "View audit records\nand service health" as A2
+ }
+ package "Shared access within permissions" {
+  usecase "Sign in / sign out" as C1
+  usecase "View accessible mission\nrecords, maps and alerts" as C2
+  usecase "View / download / print\npermitted mission reports" as C3
+  usecase "View read-only live\n3D simulation" as C4
+ }
+}
+Role -- A1
+Role -- A2
+Role -- C1
+Role -- C2
+Role -- C4
+C3 ..> C2 : <<extend>>\n[report permission]
+@enduml
+
+@startuml
+!pragma layout smetana
+left to right direction
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 28
+skinparam actorStyle stickman
+skinparam packageStyle rectangle
+actor "Supervisor" as Role
+rectangle "TerraGuavd | Survey planning" {
+ package "Role-specific goals" {
+  usecase "Manage survey area\nassignments and revisions" as S1
+  usecase "Review area coverage\nand progress" as S2
+ }
+ package "Shared access within permissions" {
+  usecase "Sign in / sign out" as C1
+  usecase "View accessible mission\nrecords, maps and alerts" as C2
+  usecase "View / download / print\npermitted mission reports" as C3
+  usecase "View read-only live\n3D simulation" as C4
+ }
+}
+Role -- S1
+Role -- S2
+Role -- C1
+Role -- C2
+Role -- C4
+C3 ..> C2 : <<extend>>\n[report permission]
+@enduml
+
+@startuml
+!pragma layout smetana
+left to right direction
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 28
+skinparam actorStyle stickman
+skinparam packageStyle rectangle
+actor "Mission Operator" as Role
+rectangle "TerraGuavd | Mission operations" {
+ package "Role-specific goals" {
+  usecase "Create and validate\nassigned sub-mission" as O1
+  usecase "Start / pause / resume /\ncancel assigned mission" as O2
+ }
+ package "Shared access within permissions" {
+  usecase "Sign in / sign out" as C1
+  usecase "View accessible mission\nrecords, maps and alerts" as C2
+  usecase "View / download / print\npermitted mission reports" as C3
+  usecase "View read-only live\n3D simulation" as C4
+ }
+}
+Role -- O1
+Role -- O2
+Role -- C1
+Role -- C2
+Role -- C4
+C3 ..> C2 : <<extend>>\n[report permission]
+@enduml
+
+@startuml
+!pragma layout smetana
+left to right direction
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 28
+skinparam actorStyle stickman
+skinparam packageStyle rectangle
+actor "Detection Analyst" as Role
+rectangle "TerraGuavd | Detection review" {
+ package "Role-specific goals" {
+  usecase "Review synthetic\npotential targets" as D1
+  usecase "Save target assessment" as D2
+ }
+ package "Shared access within permissions" {
+  usecase "Sign in / sign out" as C1
+  usecase "View accessible mission\nrecords, maps and alerts" as C2
+  usecase "View / download / print\npermitted mission reports" as C3
+  usecase "View read-only live\n3D simulation" as C4
+ }
+}
+Role -- D1
+Role -- D2
+Role -- C1
+Role -- C2
+Role -- C4
+C3 ..> C2 : <<extend>>\n[report permission]
+@enduml
+
+@startuml
+!pragma layout smetana
+left to right direction
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 28
+skinparam actorStyle stickman
+skinparam packageStyle rectangle
+actor "Field Personnel" as Role
+rectangle "TerraGuavd | Field monitoring" {
+ package "Role-specific goals" {
+  usecase "View assigned missions,\ntelemetry, targets and history" as F1
+  usecase "Submit stop request for\nactive assigned mission" as F2
+ }
+ package "Shared access within permissions" {
+  usecase "Sign in / sign out" as C1
+  usecase "View accessible mission\nrecords, maps and alerts" as C2
+  usecase "View read-only live\n3D simulation" as C4
+ }
+}
+Role -- F1
+Role -- F2
+Role -- C1
+Role -- C2
+Role -- C4
+@enduml

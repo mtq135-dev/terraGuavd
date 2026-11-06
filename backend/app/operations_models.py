@@ -19,7 +19,7 @@ class Mission(Base):
     speed_m_s: Mapped[float] = mapped_column(Float)
     state: Mapped[str] = mapped_column(String(32), default="DRAFT")
     runtime: Mapped[str] = mapped_column(String(32), default="px4-gazebo")
-    uav_id: Mapped[str] = mapped_column(String(40), default="sitl-01")
+    uav_id: Mapped[str] = mapped_column(ForeignKey('uavs.id'), default="sitl-01")
     synthetic_sensors: Mapped[bool] = mapped_column(Boolean, default=False)
     plan_revision: Mapped[int] = mapped_column(Integer, default=1, server_default='1')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -108,7 +108,7 @@ class SurveyAttempt(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     mission_id: Mapped[str] = mapped_column(ForeignKey("missions.id"), unique=True)
     area_id: Mapped[str] = mapped_column(String(80), index=True)
-    uav_id: Mapped[str] = mapped_column(String(40), default="sitl-01")
+    uav_id: Mapped[str] = mapped_column(ForeignKey('uavs.id'), default="sitl-01")
     status: Mapped[str] = mapped_column(String(32))
     coverage_percent: Mapped[float] = mapped_column(Float)
     geometry: Mapped[dict] = mapped_column(JSON)
@@ -120,8 +120,27 @@ class SurveyAttempt(Base):
 
 class VehicleLease(Base):
     __tablename__ = "vehicle_leases"
-    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    id: Mapped[str] = mapped_column(ForeignKey('uavs.id'), primary_key=True)
     mission_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class UAVType(Base):
+    __tablename__ = 'uav_types'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True)
+    category: Mapped[str] = mapped_column(String(40))
+    simulation_profile: Mapped[str] = mapped_column(String(40))
+    specifications: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class UAV(Base):
+    __tablename__ = 'uavs'
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    type_id: Mapped[str] = mapped_column(ForeignKey('uav_types.id'))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    runtime_slot: Mapped[str | None] = mapped_column(String(16), unique=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class SurveyAreaAssignment(Base):

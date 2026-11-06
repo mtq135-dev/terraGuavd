@@ -1,0 +1,173 @@
+@startuml
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 18
+skinparam componentStyle rectangle
+skinparam classAttributeIconSize 0
+skinparam classBackgroundColor #F7F9FB
+skinparam classBorderColor #4B5966
+skinparam ArrowColor #465565
+
+hide methods
+hide circle
+left to right direction
+entity "users" as users {
+  id <<PK>>
+  username
+  password_hash
+  role
+  active
+  denied_permissions
+}
+entity "auth_sessions" as auth_sessions {
+  token_hash <<PK>>
+  user_id <<FK>>
+  expires_at
+}
+entity "audit_events" as audit_events {
+  id <<PK>>
+  actor
+  action
+  created_at
+}
+entity "missions" as missions {
+  id <<PK>>
+  name
+  area_id
+  operator_id <<FK>>
+  field_ids
+  boundary
+  waypoints
+  altitude_m
+  speed_m_s
+  state
+  runtime
+  synthetic_sensors
+  created_at
+  started_at
+  finished_at
+  error
+  planned_geometry
+  uav_id <<FK>>
+  assignment_id <<FK>>
+}
+entity "mission_events" as mission_events {
+  id <<PK>>
+  mission_id <<FK>>
+  kind
+  detail
+  created_at
+}
+entity "observations" as observations {
+  id <<PK>>
+  mission_id <<FK>>
+  sequence
+  longitude
+  latitude
+  altitude_m
+  speed_m_s
+  battery_percent
+  source
+  sensor
+  created_at
+  position
+  footprint
+}
+entity "detections" as detections {
+  id <<PK>>
+  mission_id <<FK>>
+  observation_id <<FK>>
+  longitude
+  latitude
+  confidence
+  classification
+  processing_version
+  simulated
+  created_at
+  position
+}
+entity "analyst_reviews" as analyst_reviews {
+  id <<PK>>
+  detection_id <<FK>>
+  analyst_id <<FK>>
+  assessment
+  notes
+  created_at
+}
+entity "survey_attempts" as survey_attempts {
+  id <<PK>>
+  mission_id <<FK>>
+  area_id
+  status
+  coverage_percent
+  geometry
+  algorithm_version
+  simulated
+  started_at
+  finished_at
+  coverage_geometry
+  uav_id <<FK>>
+}
+entity "vehicle_leases" as vehicle_leases {
+  id <<PK>> <<FK>>
+  mission_id
+}
+entity "survey_area_assignments" as survey_area_assignments {
+  id <<PK>>
+  name
+  description
+  operator_id <<FK>>
+  created_by <<FK>>
+  boundary
+  deadline
+  revision
+  created_at
+  updated_at
+  boundary_geometry
+}
+entity "survey_area_events" as survey_area_events {
+  id <<PK>>
+  assignment_id <<FK>>
+  actor_id <<FK>>
+  kind
+  snapshot
+  created_at
+}
+entity "uav_types" as uav_types {
+  id <<PK>>
+  name
+  category
+  simulation_profile
+  specifications
+}
+entity "uavs" as uavs {
+  id <<PK>>
+  name
+  type_id <<FK>>
+  active
+  runtime_slot
+  created_at
+}
+auth_sessions }o--|| users : user_id
+missions }o--|| users : operator_id
+missions }o--|| uavs : uav_id
+missions }o--|| survey_area_assignments : assignment_id
+mission_events }o--|| missions : mission_id
+observations }o--|| missions : mission_id
+detections }o--|| missions : mission_id
+detections }o--|| observations : observation_id
+analyst_reviews }o--|| detections : detection_id
+analyst_reviews }o--|| users : analyst_id
+survey_attempts }o--|| missions : mission_id
+survey_attempts }o--|| uavs : uav_id
+vehicle_leases }o--|| uavs : id
+survey_area_assignments }o--|| users : operator_id
+survey_area_assignments }o--|| users : created_by
+survey_area_events }o--|| survey_area_assignments : assignment_id
+survey_area_events }o--|| users : actor_id
+uavs }o--|| uav_types : type_id
+audit_events .. users : actor
+vehicle_leases .. missions : mission_id
+missions .. survey_attempts : area_id grouping
+@enduml

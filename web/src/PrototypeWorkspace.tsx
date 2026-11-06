@@ -8,20 +8,11 @@ import {
 } from "react";
 import { Dashboard, Identity, request } from "./api";
 import { Empty, Panel } from "./components";
-import {
-  Mission,
-  MissionApproval,
-  MissionDetail,
-  Target,
-} from "./operations-api";
-import {
-  ApprovalInbox,
-  ApprovalPreviewNotice,
-  MissionApprovalPanel,
-  useApprovalPreview,
-} from "./MissionApprovals";
+import { Mission, MissionDetail, Target } from "./operations-api";
+import { ApprovalInbox, MissionApprovalPanel } from "./MissionApprovals";
+import Fleet, { FleetVehicle } from "./Fleet";
 import SurveyMap from "./SurveyMap";
-import PlanMap from "./PlanMap";
+import MissionPlanner from "./planning/MissionPlanner";
 import SurveyAreas from "./SurveyAreas";
 import DetectionList, {
   detectionLabel,
@@ -30,36 +21,6 @@ import DetectionList, {
 import { SurveyArea } from "./survey-areas-api";
 const GazeboView = lazy(() => import("./GazeboView"));
 
-function points(value: string): [number, number][] {
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) &&
-      parsed.every(
-        (p) =>
-          Array.isArray(p) &&
-          p.length === 2 &&
-          p.every((n) => typeof n === "number" && Number.isFinite(n)),
-      )
-      ? parsed
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-const boundary = [
-  [8.5453, 47.3976],
-  [8.5459, 47.3976],
-  [8.5459, 47.39794],
-  [8.5453, 47.39794],
-  [8.5453, 47.3976],
-];
-const waypoints = [
-  [8.5454, 47.3977],
-  [8.5458, 47.3977],
-  [8.5458, 47.39784],
-  [8.5454, 47.39784],
-];
 const active = [
   "STARTING_SIMULATION",
   "WAITING_FOR_VEHICLE",
@@ -87,18 +48,15 @@ export default function PrototypeWorkspace({
     (data?.missions ?? []) as Mission[],
   );
   const [selected, setSelected] = useState("");
-  const [boundaryText, setBoundaryText] = useState(JSON.stringify(boundary));
-  const [waypointText, setWaypointText] = useState(JSON.stringify(waypoints));
   const [detail, setDetail] = useState<MissionDetail>();
   const [error, setError] = useState("");
-  const [planError, setPlanError] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [fleet, setFleet] = useState<FleetVehicle[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [areas, setAreas] = useState<SurveyArea[]>([]);
   const [areaPages, setAreaPages] = useState(1);
   const [assignmentId, setAssignmentId] = useState("");
-  const [editingMission, setEditingMission] = useState<Mission>();
   const [target, setTarget] = useState<Target>();
   const [history, setHistory] = useState<
     {
@@ -112,25 +70,6 @@ export default function PrototypeWorkspace({
   const [connection, setConnection] = useState("No mission selected");
   const operator = user.role === "mission_operator";
   const areaAccess = operator || user.role === "supervisor";
-  const assignedAreas = areas.filter((area) => area.operator_id === user.id);
-  const parent = assignedAreas.find((area) => area.id === assignmentId);
-  const planning =
-    operator &&
-    view === "Mission Planning" &&
-    user.permissions.includes("missions:plan");
-  const soleAssignmentId =
-    assignedAreas.length === 1 ? assignedAreas[0].id : undefined;
-  useEffect(() => {
-    if (planning && !assignmentId && soleAssignmentId) {
-      setAssignmentId(soleAssignmentId);
-    }
-  }, [planning, assignmentId, soleAssignmentId]);
-  const approvalPreview = useApprovalPreview(
-    token,
-    planning ? parent?.id : undefined,
-    points(boundaryText),
-    parent?.revision,
-  );
   const refreshAreas = useCallback(async () => {
     if (!areaAccess) return;
     try {
@@ -164,6 +103,7 @@ export default function PrototypeWorkspace({
         area.id === detail.mission.assignment_id &&
         area.operator_id === user.id,
     );
+  const approvalBlocked = !!detail?.approval?.required && !detail.approval.can_execute;
   const canPlan =
     operator &&
     parentStillAssigned &&
@@ -174,10 +114,6 @@ export default function PrototypeWorkspace({
     parentStillAssigned &&
     detail?.mission.operator_id === user.id &&
     user.permissions.includes("missions:execute");
-  const boundaryAuthorized =
-    !detail?.mission.assignment_id || detail.approval?.can_execute === true;
-  const planEditable =
-    !!detail && ["DRAFT", "READY"].includes(detail.mission.state);
   const refreshMissions = useCallback(async () => {
     try {
       const list = await request<Mission[]>("/missions", token);
@@ -252,6 +188,25 @@ export default function PrototypeWorkspace({
         .then(setPeople)
         .catch((e) => setError(e.message));
   }, [view, token]);
+  useEffect(() => {
+    if (view !== "Mission Planning" || !user.permissions.includes("fleet:read"))
+      return;
+    let alive = true;
+    const load = () =>
+      request<FleetVehicle[]>("/fleet/vehicles", token)
+        .then((rows) => {
+          if (alive) setFleet(rows);
+        })
+        .catch((e) => {
+          if (alive) setError(e.message);
+        });
+    load();
+    const timer = setInterval(load, 5000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [view, token, user.permissions]);
   async function act(command: string) {
     if (!selected) return;
     setMessage("");
@@ -268,69 +223,6 @@ export default function PrototypeWorkspace({
     } finally {
       setBusy(false);
     }
-  }
-  async function create(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    setBusy(true);
-    setError("");
-    setPlanError("");
-    try {
-      if (!parent)
-        throw new Error(
-          "Select a survey area assigned by your Supervisor first.",
-        );
-      const mission = await request<Mission & { approval: MissionApproval }>(
-        editingMission ? `/missions/${editingMission.id}` : "/missions",
-        token,
-        {
-          method: editingMission ? "PUT" : "POST",
-          body: JSON.stringify({
-            name: form.get("name"),
-            area_id: form.get("area_id"),
-            assignment_id: parent.id,
-            boundary: JSON.parse(String(form.get("boundary"))),
-            waypoints: JSON.parse(String(form.get("waypoints"))),
-            altitude_m: Number(form.get("altitude")),
-            speed_m_s: Number(form.get("speed")),
-            synthetic_sensors: form.get("synthetic") === "on",
-            field_ids: form.getAll("field_ids"),
-            ...(editingMission && {
-              plan_revision: editingMission.plan_revision,
-            }),
-          }),
-        },
-      );
-      if (selected === mission.id) {
-        setDetail(
-          await request<MissionDetail>(`/missions/${mission.id}`, token),
-        );
-      } else {
-        setDetail(undefined);
-        setSelected(mission.id);
-      }
-      setEditingMission(undefined);
-      await refreshMissions();
-      setMessage(
-        mission.approval?.required && !mission.approval.can_execute
-          ? "Draft saved. Request Supervisor approval before validating or starting."
-          : "Plan saved. Validate, then explicitly start when ready.",
-      );
-    } catch (e) {
-      setPlanError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  function editPlan(mission: Mission) {
-    if (!mission.assignment_id || mission.plan_revision === undefined) return;
-    setPlanError("");
-    setEditingMission(mission);
-    setAssignmentId(mission.assignment_id);
-    setBoundaryText(JSON.stringify(mission.boundary.coordinates[0]));
-    setWaypointText(JSON.stringify(mission.waypoints));
-    setMessage("");
-    onViewChange?.("Mission Planning");
   }
   async function assess(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -423,40 +315,15 @@ export default function PrototypeWorkspace({
           onLoadMore={() => setAreaPages(areaPages + 1)}
           hasMore={areas.length === areaPages * 100}
           onPlan={(area) => {
-            setPlanError("");
-            setEditingMission(undefined);
             setAssignmentId(area.id);
-            setBoundaryText("[]");
-            setWaypointText("[]");
             onViewChange?.("Mission Planning");
           }}
         />
       )}
-      {user.role === "supervisor" &&
-        ["Dashboard", "Approvals"].includes(view) &&
-        (user.permissions.includes("missions:approve") ? (
-          <ApprovalInbox token={token} supervisor />
-        ) : (
-          view === "Approvals" && (
-            <Panel title="Mission Approval Requests">
-              <Empty>Supervisor approval permission is required.</Empty>
-            </Panel>
-          )
-        ))}
-      {operator &&
-        user.permissions.includes("missions:read") &&
-        ["Dashboard", "Alerts"].includes(view) && (
-          <ApprovalInbox token={token} supervisor={false} />
-        )}
-      {view === "UAV Fleet" && (
-        <Panel title="Configured UAV fleet">
-          <strong>sitl-01 - PX4 x500 / Gazebo</strong>
-          <p>
-            One isolated simulated vehicle. View Missions Overview for assigned
-            mission status. Physical aircraft are outside this prototype.
-          </p>
-        </Panel>
-      )}
+      {view === "UAV Fleet" && <Fleet token={token} user={user} />}
+      {user.role === "supervisor" && ["Dashboard","Approvals"].includes(view) && <ApprovalInbox token={token} supervisor />}
+      {operator && ["Dashboard","Alerts"].includes(view) && <ApprovalInbox token={token} supervisor={false} />}
+      {detail?.approval && operator && <MissionApprovalPanel token={token} missionId={detail.mission.id} approval={detail.approval} canRequest={!!canPlan && ["DRAFT","READY"].includes(detail.mission.state)} onUpdated={async()=>setDetail(await request<MissionDetail>(`/missions/${detail.mission.id}`,token))} />}
       {!["Survey Areas", "Approvals", "UAV Fleet"].includes(view) && (
         <>
           {view === "More" ? (
@@ -472,211 +339,21 @@ export default function PrototypeWorkspace({
             </Panel>
           ) : (
             <>
-              {planning && (
-                <Panel
-                  title={
-                    editingMission
-                      ? "Edit mission plan"
-                      : "Create simulated survey mission"
-                  }
-                >
-                  <form
-                    key={editingMission?.id ?? "new-mission"}
-                    onSubmit={create}
-                  >
-                    <label>
-                      Assigned survey area
-                      <select
-                        required
-                        disabled={!!editingMission}
-                        value={parent?.id ?? ""}
-                        onChange={(event) => {
-                          setPlanError("");
-                          setAssignmentId(event.target.value);
-                        }}
-                      >
-                        <option value="" disabled>
-                          Select a Supervisor-assigned area
-                        </option>
-                        {assignedAreas.map((area) => (
-                          <option key={area.id} value={area.id}>
-                            {area.name} ·{" "}
-                            {area.progress.coverage_percent.toFixed(2)}%
-                            completed
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="grid two">
-                      <label>
-                        Mission name
-                        <input
-                          name="name"
-                          required
-                          maxLength={100}
-                          defaultValue={editingMission?.name ?? "SITL survey"}
-                        />
-                      </label>
-                      <label>
-                        Survey area ID
-                        <input
-                          name="area_id"
-                          required
-                          pattern={String.raw`[a-zA-Z0-9_\-]+`}
-                          defaultValue={
-                            editingMission?.area_id ?? "sitl-area-a"
-                          }
-                        />
-                      </label>
-                      <label>
-                        Altitude (m)
-                        <input
-                          name="altitude"
-                          type="number"
-                          min={2}
-                          max={8}
-                          step="0.5"
-                          defaultValue={editingMission?.altitude_m ?? 5}
-                        />
-                      </label>
-                      <label>
-                        Speed (m/s)
-                        <input
-                          name="speed"
-                          type="number"
-                          min="0.5"
-                          max={3}
-                          step="0.5"
-                          defaultValue={editingMission?.speed_m_s ?? 2}
-                        />
-                      </label>
-                    </div>
-                    <PlanMap
-                      boundary={points(boundaryText)}
-                      waypoints={points(waypointText)}
-                      onBoundary={(value) =>
-                        setBoundaryText(JSON.stringify(value))
-                      }
-                      onWaypoints={(value) =>
-                        setWaypointText(JSON.stringify(value))
-                      }
-                      assignedBoundary={parent?.boundary}
-                      outsideGeometry={
-                        approvalPreview?.preview?.required
-                          ? approvalPreview.preview.outside_geometry
-                          : undefined
-                      }
-                    />
-                    {approvalPreview?.preview && (
-                      <ApprovalPreviewNotice
-                        preview={approvalPreview.preview}
-                      />
-                    )}
-                    {approvalPreview?.error && (
-                      <p role="status" className="approval-notice">
-                        {approvalPreview.error}
-                      </p>
-                    )}
-                    <label>
-                      Boundary · closed [longitude, latitude] ring
-                      <textarea
-                        name="boundary"
-                        required
-                        value={boundaryText}
-                        onChange={(event) =>
-                          setBoundaryText(event.target.value)
-                        }
-                      />
-                    </label>
-                    <label>
-                      Waypoints · [longitude, latitude] pairs
-                      <textarea
-                        name="waypoints"
-                        required
-                        value={waypointText}
-                        onChange={(event) =>
-                          setWaypointText(event.target.value)
-                        }
-                      />
-                    </label>
-                    <label className="check-label">
-                      <input
-                        name="synthetic"
-                        type="checkbox"
-                        defaultChecked={
-                          editingMission?.synthetic_sensors ?? true
-                        }
-                      />
-                      Use mock GPR/metal sensor data and synthetic detections
-                    </label>
-                    <label>
-                      Assigned Field Personnel
-                      <select
-                        name="field_ids"
-                        multiple
-                        defaultValue={editingMission?.field_ids ?? []}
-                      >
-                        {editingMission?.field_ids
-                          .filter(
-                            (id) => !people.some((person) => person.id === id),
-                          )
-                          .map((id) => (
-                            <option key={id} value={id}>
-                              Previously assigned Field Personnel · {id}
-                            </option>
-                          ))}
-                        {people
-                          .filter((p) => p.role === "field_personnel")
-                          .map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.username}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                    <p className="panel-note">
-                      Default coordinates are near the PX4 simulator home. No
-                      mission runs on save. Synthetic features are experimental
-                      fixtures, not physical sensor measurements.
-                    </p>
-                    {!parent && (
-                      <p className="panel-note" id="mission-assignment-hint">
-                        {assignedAreas.length
-                          ? "Select an assigned survey area above to save this plan."
-                          : "A Supervisor must assign you a survey area before you can save a mission."}
-                      </p>
-                    )}
-                    {planError && (
-                      <p role="alert" className="error">
-                        {planError}
-                      </p>
-                    )}
-                    <button
-                      className="primary"
-                      disabled={busy || !parent}
-                      aria-describedby={
-                        parent ? undefined : "mission-assignment-hint"
-                      }
-                    >
-                      {editingMission
-                        ? "Save revised plan"
-                        : "Save draft mission"}
-                    </button>
-                    {editingMission && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPlanError("");
-                          setEditingMission(undefined);
-                          setBoundaryText("[]");
-                          setWaypointText("[]");
-                        }}
-                      >
-                        Cancel plan edit
-                      </button>
-                    )}
-                  </form>
-                </Panel>
+              {operator && view === "Mission Planning" && (
+                <MissionPlanner
+                  token={token}
+                  user={user}
+                  areas={areas}
+                  fleet={fleet}
+                  missions={missions}
+                  people={people}
+                  initialAreaId={assignmentId}
+                  onSaved={async (mission) => {
+                    setSelected(mission.id);
+                    setDetail(undefined);
+                    await refreshMissions();
+                  }}
+                />
               )}
               <Panel
                 title={field ? "Assigned missions" : "Mission workspace"}
@@ -711,6 +388,7 @@ export default function PrototypeWorkspace({
                         }}
                       >
                         <strong>{m.name}</strong>
+                        <small>UAV: {m.uav_id ?? "Not recorded"}</small>
                         <span className="status neutral">
                           {m.state.replaceAll("_", " ")}
                         </span>
@@ -745,45 +423,20 @@ export default function PrototypeWorkspace({
               {detail && (
                 <>
                   <div className="view-banner">
-                    <strong>{detail.mission.name}</strong> ·{" "}
+                    <strong>{detail.mission.name}</strong> · UAV:{" "}
+                    {detail.mission.uav_id ?? "Not recorded"} ·{" "}
                     {detail.mission.state} · {connection}
                     {detail.mission.error && (
                       <p role="alert">{detail.mission.error}</p>
                     )}
                   </div>
-                  {operator &&
-                    detail.approval &&
-                    (showCommands || view === "Alerts") && (
-                      <MissionApprovalPanel
-                        key={detail.mission.id}
-                        token={token}
-                        missionId={detail.mission.id}
-                        approval={detail.approval}
-                        canRequest={canPlan && planEditable}
-                        onUpdated={(approval) =>
-                          setDetail((current) =>
-                            current?.mission.id === detail.mission.id
-                              ? {
-                                  ...current,
-                                  approval,
-                                  mission: {
-                                    ...current.mission,
-                                    state: "DRAFT",
-                                  },
-                                }
-                              : current,
-                          )
-                        }
-                      />
-                    )}
                   {showCommands && (canCommand || canPlan) && (
                     <Panel title="Assigned operator commands">
                       <div className="command-row">
                         <button
                           disabled={
                             busy ||
-                            !canPlan ||
-                            !boundaryAuthorized ||
+                            !canPlan || approvalBlocked ||
                             !["DRAFT", "READY"].includes(detail.mission.state)
                           }
                           onClick={() => act("validate")}
@@ -794,30 +447,17 @@ export default function PrototypeWorkspace({
                           className="primary-inline"
                           disabled={
                             busy ||
-                            !canCommand ||
-                            !boundaryAuthorized ||
+                            !canCommand || approvalBlocked ||
                             detail.mission.state !== "READY"
                           }
                           onClick={() => act("start")}
                         >
                           Start simulated mission
                         </button>
-                        {canPlan &&
-                          planEditable &&
-                          detail.mission.assignment_id &&
-                          detail.mission.plan_revision !== undefined && (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => editPlan(detail.mission)}
-                            >
-                              Edit mission plan
-                            </button>
-                          )}
                         <button
                           disabled={
                             busy ||
-                            !canCommand ||
+                            !canCommand || approvalBlocked ||
                             detail.mission.state !== "EXECUTING"
                           }
                           onClick={() => act("pause")}
@@ -827,7 +467,7 @@ export default function PrototypeWorkspace({
                         <button
                           disabled={
                             busy ||
-                            !canCommand ||
+                            !canCommand || approvalBlocked ||
                             detail.mission.state !== "PAUSED"
                           }
                           onClick={() => act("resume")}
@@ -838,7 +478,7 @@ export default function PrototypeWorkspace({
                           className="danger"
                           disabled={
                             busy ||
-                            !canCommand ||
+                            !canCommand || approvalBlocked ||
                             !["EXECUTING", "PAUSED"].includes(
                               detail.mission.state,
                             )

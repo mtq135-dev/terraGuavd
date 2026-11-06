@@ -1,0 +1,48 @@
+@startuml
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 19
+skinparam sequenceMessageAlign center
+skinparam ParticipantPadding 18
+skinparam maxMessageSize 280
+hide footbox
+control "Mission runner" as R
+control "Synthetic processor" as P
+database "Store" as DB
+actor "Detection Analyst" as A
+boundary "Web / FastAPI" as APP
+R -> DB : Save mission observation and telemetry
+alt Synthetic sensors selected and mission EXECUTING
+  R -> P : Obtain fixture; check quality, altitude and speed
+  P --> R : Eligibility and experimental feature score
+  alt Candidate score exists
+    R -> DB : Check for target within 4 m
+    alt No nearby target
+      R -> P : Copy predefined synthetic classification
+      P --> R : potential_mine / metallic_object / unknown / rock
+      R -> DB : Insert target with observation, confidence,\nversion, simulated flag and UTC time
+      R -> DB : Append potential_target mission event
+    else Nearby target exists
+      R -> R : Suppress duplicate target
+    end
+  else No candidate
+    R -> R : Keep observation; create no target
+  end
+else No selected synthetic processing
+  R -> R : Keep telemetry; create no synthetic target
+end
+A -> APP : Open accessible target
+APP -> DB : Read target and existing assessments
+APP --> A : Synthetic and unverified target details
+A -> APP : Submit assessment value and notes
+APP -> APP : Check review permission and mission access
+APP -> DB : Append assessment; append audit event
+APP --> A : Assessment recorded.\nThis does not verify a landmine.
+note over P, DB
+  Fixture labels are demonstration data, not predictions.
+  Observation provenance and processing version remain retained.
+  Candidate threshold and duplicate suppression reflect processing code.
+  FR-47–FR-50; FR-68–FR-71.
+end note
+@enduml

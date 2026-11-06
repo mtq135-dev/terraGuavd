@@ -1,0 +1,76 @@
+@startuml
+!pragma useVerticalIf on
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 18
+skinparam activityBackgroundColor #F7F9FB
+skinparam activityBorderColor #4B5966
+start
+:Select Supervisor assignment and registered UAV;
+:Draw or edit a survey sector;
+:Preview generated survey lanes;
+:Retain other sector drafts on the map;
+:Assigned operator saves selected sector as DRAFT;
+repeat
+  :Validate plan and parent containment;
+  if (Plan passes?) then (yes)
+    :Set READY;
+  else (no)
+    :Show validation error;
+    :Operator corrects plan;
+  endif
+repeat while (Plan still invalid?) is (yes) not (no)
+:Operator explicitly requests start;
+if (Authorized, READY and vehicle free?) then (yes)
+  :Reserve selected registered UAV;
+  :STARTING_SIMULATION;
+:Initialize isolated world near first waypoint;
+else (no)
+  :Reject start; no flight;
+  stop
+endif
+:WAITING_FOR_VEHICLE;
+:Check connection readiness;
+:UPLOADING; upload plan;
+:Check pre-arm readiness and start;
+if (Startup succeeds?) then (yes)
+  :Set EXECUTING;
+else (no)
+  :Stop runtime; set FAILED;
+  :Save final snapshot; release lease;
+  stop
+endif
+while (No terminal outcome?) is (yes)
+  :Receive telemetry or command / lifecycle event;
+  if (API restart?) then (yes)
+    :Stop runtime; set INTERRUPTED;
+    break
+  elseif (Runner error / telemetry loss?) then (yes)
+    :Stop runtime; set FAILED;
+    break
+  elseif (Observed armed then disarmed?) then (yes)
+    if (State is CANCELLING?) then (yes)
+      :Set CANCELLED;
+    elseif (Reached >= total - 2?) then (yes)
+      :Set COMPLETED;
+    else (no)
+      :Set INTERRUPTED;
+    endif
+    break
+  elseif (Permitted command received?) then (yes)
+    :Pause: EXECUTING to PAUSED (Hold);\nResume: PAUSED to EXECUTING (Mission);\nCancel: EXECUTING / PAUSED to CANCELLING (RTL);
+  else (no)
+    :Continue monitoring;
+  endif
+endwhile (no)
+:Save final attempt and coverage snapshot;
+:Release vehicle reservation;
+stop
+note right
+  Asynchronous monitoring and commands are summarized
+  in one event loop. Rejected commands leave state unchanged.
+  DRAFT / READY cannot be cancelled. Terminal missions
+  cannot restart. FR-22–FR-46; Table 6.
+end note
+@enduml

@@ -122,7 +122,8 @@ def summary(db, row):
     started=db.scalar(select(Mission.id).where(Mission.assignment_id==row.id,Mission.started_at.is_not(None)).limit(1))
     status='COMPLETED' if coverage['fully_surveyed'] else 'IN_PROGRESS' if started else 'ASSIGNED'
     operator=db.get(User,row.operator_id)
-    return {**record(db,row),'operator_username':operator.username,'status':status,'progress':coverage,
+    uav_ids=list(db.scalars(select(Mission.uav_id).where(Mission.assignment_id==row.id).distinct().order_by(Mission.uav_id)))
+    return {**record(db,row),'operator_username':operator.username,'status':status,'progress':coverage,'uav_ids':uav_ids,'uav_count':len(uav_ids),
         'overdue':bool(row.deadline and row.deadline.replace(tzinfo=UTC)<datetime.now(UTC) and status!='COMPLETED')}
 
 
@@ -217,3 +218,16 @@ def area_detail(area_id: str,db: Db,user: Identity,offset: int=0,limit: int=100)
                      .order_by(SurveyAreaEvent.created_at.desc()).offset(offset).limit(limit)).all()
     return {**summary(db,row),'missions':[record(db,m) for m in missions],
         'surveys':[record(db,s) for s in attempts],'history':[record(db,e) for e in events]}
+
+
+def check_mission_area(db, mission):
+    # Pre-upgrade unassigned missions retain their original workflow/history.
+    if not mission.assignment_id:
+        return
+    parent=get_area(db,mission.assignment_id,lock=True)
+    if parent.operator_id!=mission.operator_id:
+        raise HTTPException(409,'Mission operator must match the survey area assignment')
+    if not db.execute(text('''SELECT ST_Covers(boundary_geometry,
+        ST_SetSRID(ST_GeomFromGeoJSON(:g),4326)) FROM survey_area_assignments WHERE id=:id'''),
+        {'id':parent.id,'g':json.dumps(mission.boundary)}).scalar_one():
+        raise HTTPException(422,'The entire mission boundary must be inside its assigned survey area')

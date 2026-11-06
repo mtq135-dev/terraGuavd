@@ -1,0 +1,188 @@
+.reference-planner-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 20px;
+  align-items: start;
+}
+.reference-plan-map {
+  height: 570px;
+  width: 100%;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  z-index: 0;
+}
+.planner-map-pane {
+  min-width: 0;
+}
+.planner-side form {
+  display: grid;
+  gap: 14px;
+}
+.planner-side fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+.planner-side label {
+  margin: 0;
+}
+.planner-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.planner-sectors {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 6px 0 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.planner-sectors > div {
+  margin-right: auto;
+}
+.planner-sectors small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.planner-sectors button {
+  text-align: left;
+}
+.planner-sectors i {
+  width: 7px;
+  height: 7px;
+  display: inline-block;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+.planner-sectors button[aria-pressed="true"] {
+  border-color: var(--focus);
+}
+.planner-draw-bar {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.planner-draw-bar button {
+  padding: 8px 10px;
+}
+.planner-draw-bar button[aria-pressed="true"] {
+  border-color: var(--focus);
+  background: var(--raised);
+}
+.planner-draw-bar kbd {
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 5px;
+}
+.planner-hint {
+  padding: 12px 0;
+  line-height: 1.6;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.planner-check {
+  border: 1px solid var(--border);
+  padding: 12px;
+  border-radius: 6px;
+  line-height: 1.6;
+}
+.planner-check span,
+.planner-check small {
+  display: block;
+  color: var(--muted);
+}
+.drawing-area {
+  cursor: crosshair;
+}
+.area-handle {
+  background: #f6ebcf;
+  border: 2px solid #183b4b;
+  border-radius: 50%;
+  box-shadow: 0 1px 5px #0007;
+}
+.area-handle-radius {
+  border-radius: 2px;
+}
+.area-handle-ghost {
+  background: #f6ebcf99;
+  border: 1px solid #183b4b;
+  border-radius: 50%;
+}
+.area-handle-move {
+  background: var(--inset);
+  color: #f6ebcf;
+  border: 1px solid #7f9fae;
+  border-radius: 50%;
+  padding: 4px;
+}
+.area-handle-move svg {
+  width: 100%;
+  height: 100%;
+}
+.map-measure {
+  pointer-events: none;
+}
+.map-measure span {
+  display: block;
+  transform: translate(-50%, -50%);
+  width: max-content;
+  background: var(--inset);
+  color: var(--text);
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--control-border);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.map-measure-area span {
+  font-weight: 700;
+}
+.map-measure-live span {
+  margin-top: -22px;
+}
+@media (max-width: 900px) {
+  .reference-planner-layout {
+    grid-template-columns: 1fr;
+  }
+  .reference-plan-map {
+    height: 460px;
+  }
+  .planner-side form {
+    max-width: 650px;
+  }
+}
+
+.reference-planner .planner-side {
+  width: auto;
+  display: block;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  position: static;
+  height: auto;
+  min-height: 0;
+  flex: none;
+}
+.planner-tile-error {
+  position: absolute;
+  bottom: 26px;
+  left: 12px;
+  z-index: 500;
+  max-width: 260px;
+  background: var(--inset);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+}

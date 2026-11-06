@@ -469,3 +469,148 @@ def test_mission_area_and_route_caps_removed_but_containment_retained(operationa
             'waypoints': [[8.545405,47.397705],[8.545415,47.397715]]}
     assert api.post('/api/v1/missions', headers=op, json=tiny).status_code == 201
     assert api.post('/api/v1/missions', headers=op, json={**large, 'waypoints': [[9,48],[9.1,48.1]]}).status_code == 422
+
+
+@pytest.mark.skipif(os.getenv('RUN_PX4_MULTI_E2E')!='1',reason='Opt in to two actual isolated PX4/Gazebo flights')
+def test_actual_two_uavs_same_area(operational_api):
+    from app.fleet import vehicle_runtime
+    from pathlib import Path
+    import json
+    api,headers,factory=operational_api;op=headers('mission_operator')
+    ids=[create(api,op,name='Two-UAV isolated test '+uav,uav_id=uav) for uav in ['sitl-01','sitl-02']]
+    evidence={'mode':'isolated simulation only','synthetic_sensors':True,'simultaneously_executing':False,'missions':[]}
+    try:
+        for mid in ids:assert api.post(f'/api/v1/missions/{mid}/validate',headers=op).status_code==200
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            starts=list(pool.map(lambda mid:api.post(f'/api/v1/missions/{mid}/start',headers=op).status_code,ids))
+        assert starts==[202,202],starts
+        deadline=time.monotonic()+360
+        while time.monotonic()<deadline:
+            rows=[api.get(f'/api/v1/missions/{mid}',headers=op).json() for mid in ids]
+            if all(row['mission']['state']=='EXECUTING' for row in rows):evidence['simultaneously_executing']=True
+            if any(row['mission']['state']=='FAILED' for row in rows):pytest.fail(str([row['mission'].get('error') for row in rows]))
+            if all(row['mission']['state'] in operations.TERMINAL for row in rows):break
+            time.sleep(2)
+        assert evidence['simultaneously_executing'],'Flights did not overlap in EXECUTING'
+        for uid,mid,row in zip(['sitl-01','sitl-02'],ids,rows):
+            assert row['mission']['state']=='COMPLETED',row['mission']
+            assert row['mission']['uav_id']==uid and len(row['observations'])>5
+            assert all(o['mission_id']==mid for o in row['observations'])
+            assert any(o['altitude_m']>2 for o in row['observations'])
+            with factory() as db:
+                attempt=db.scalar(select(SurveyAttempt).where(SurveyAttempt.mission_id==mid))
+                assert attempt.uav_id==uid
+                assert db.get(VehicleLease,uid).mission_id is None
+            evidence['missions'].append({'mission_id':mid,'uav_id':uid,'state':row['mission']['state'],'observations':len(row['observations']),'synthetic_targets':len(row['detections']),'experimental_coverage_percent':row['coverage']['coverage_percent']})
+        area=api.get('/api/v1/survey-areas/workflow-area',headers=op).json()
+        assert area['uav_count']==2 and area['uav_ids']==['sitl-01','sitl-02']
+        out=Path(__file__).resolve().parents[2]/'docs/multi-uav-e2e-evidence.json'
+        out.write_text(json.dumps(evidence,indent=2),encoding='utf-8')
+        print('MULTI-UAV E2E:',json.dumps(evidence))
+    finally:
+        for mid in ids:
+            with factory() as db:
+                mission=db.get(Mission,mid)
+                vehicle_runtime(db,mission.uav_id).call('/runtime/stop',{})
+                if mission.state not in operations.TERMINAL:operations.finish(db,mission,'INTERRUPTED','Multi-UAV test cleanup')
+
+
+def test_multi_uav_disjoint_overlapping_and_separate_assignment_plans(operational_api):
+    api,headers,factory=operational_api
+    sup,op=headers('supervisor'),headers('mission_operator')
+    parent=new_area(api,sup,name='Partitioned area')
+    west=[[8.5453,47.3976],[8.54558,47.3976],[8.54558,47.39794],[8.5453,47.39794],[8.5453,47.3976]]
+    east=[[8.54562,47.3976],[8.5459,47.3976],[8.5459,47.39794],[8.54562,47.39794],[8.54562,47.3976]]
+    first=create(api,op,name='West sector',assignment_id=parent['id'],uav_id='sitl-01',boundary=west,waypoints=[[8.5454,47.3977],[8.5455,47.3978]])
+    second=create(api,op,name='East sector',assignment_id=parent['id'],uav_id='sitl-02',boundary=east,waypoints=[[8.5457,47.3977],[8.5458,47.3978]])
+    repeated=create(api,op,name='Overlapping survey',assignment_id=parent['id'],uav_id='sitl-03')
+    shifted=lambda ring:[[x+.001,y+.001] for x,y in ring]
+    other=new_area(api,sup,name='Separate assignment',boundary=shifted(PLAN['boundary']))
+    remote=create(api,op,name='Separate sector',assignment_id=other['id'],uav_id='sitl-01',boundary=shifted(PLAN['boundary']),waypoints=shifted(PLAN['waypoints']))
+    for mid in [first,second,repeated,remote]:
+        assert api.post(f'/api/v1/missions/{mid}/validate',headers=op).status_code==200
+    a=api.get(f"/api/v1/survey-areas/{parent['id']}",headers=op).json()
+    b=api.get(f"/api/v1/survey-areas/{other['id']}",headers=op).json()
+    assert {m['id'] for m in a['missions']}=={first,second,repeated}
+    assert {m['id'] for m in b['missions']}=={remote}
+    assert a['uav_count']==3 and b['uav_count']==1
+    assert a['progress']['coverage_percent']==b['progress']['coverage_percent']==0
+    outside=api.post('/api/v1/missions',headers=op,json={**PLAN,'assignment_id':parent['id'],'boundary':shifted(PLAN['boundary']),'waypoints':shifted(PLAN['waypoints'])})
+    assert outside.status_code==201
+    outside_id=outside.json()['id']
+    assert outside.json()['approval']['required'] is True
+    assert api.post(f'/api/v1/missions/{outside_id}/validate',headers=op).status_code==422
+    assert api.post(f'/api/v1/missions/{outside_id}/start',headers=op).status_code==409
+    escaped_route=api.post('/api/v1/missions',headers=op,json={**PLAN,'assignment_id':parent['id'],'boundary':west,'waypoints':[[8.5454,47.3977],[8.5458,47.3978]]})
+    assert escaped_route.status_code==422 and 'entire route' in escaped_route.text
+
+
+def test_reference_lane_preview_permissions_containment_and_no_side_effects(operational_api):
+    api,headers,factory=operational_api
+    body={'assignment_id':'workflow-area','uav_id':'sitl-01','boundary':PLAN['boundary'],'spacing_m':5}
+    assert api.post('/api/v1/plans/preview',json=body).status_code==401
+    for role in ['administrator','supervisor','field_personnel','detection_analyst']:
+        assert api.post('/api/v1/plans/preview',json=body,headers=headers(role)).status_code==403
+    assert api.post('/api/v1/plans/preview',json=body,headers=headers('other_operator')).status_code==409
+    op=headers('mission_operator')
+    with factory() as db:before=len(db.scalars(select(Mission)).all())
+    data=api.post('/api/v1/plans/preview',json=body,headers=op)
+    assert data.status_code==200,data.text
+    plan=data.json();assert plan['ok'] and 2<=len(plan['path'])<=100
+    mid=create(api,op,name='Generated lanes',waypoints=plan['path'])
+    assert api.post(f'/api/v1/missions/{mid}/validate',headers=op).status_code==200
+    with factory() as db:
+        assert len(db.scalars(select(Mission)).all())==before+1
+        assert db.get(VehicleLease,'sitl-01').mission_id is None
+    concave=[[8.5453,47.3976],[8.5459,47.3976],[8.5459,47.39794],[8.5457,47.39794],[8.5457,47.3977],[8.5455,47.3977],[8.5455,47.39794],[8.5453,47.39794],[8.5453,47.3976]]
+    bad=api.post('/api/v1/plans/preview',json={**body,'boundary':concave},headers=op)
+    assert bad.status_code==200 and not bad.json()['ok'] and bad.json()['path']==[]
+
+
+def test_reference_circle_and_invalid_outline_preview(operational_api):
+    import math
+    api,headers,factory=operational_api
+    ring=[[8.5456+.0001*math.cos(i*math.tau/32),47.39777+.0001*math.sin(i*math.tau/32)] for i in range(32)]
+    ring.append(ring[0])
+    body={'assignment_id':'workflow-area','uav_id':'sitl-03','boundary':ring,'spacing_m':5}
+    result=api.post('/api/v1/plans/preview',json=body,headers=headers('mission_operator'))
+    assert result.status_code==200 and result.json()['ok'],result.text
+    broken=[[8.5453,47.3976],[8.5459,47.39794],[8.5453,47.39794],[8.5459,47.3976],[8.5453,47.3976]]
+    result=api.post('/api/v1/plans/preview',json={**body,'boundary':broken},headers=headers('mission_operator'))
+    assert result.status_code==200 and not result.json()['ok'] and result.json()['path']==[]
+
+
+@pytest.mark.skipif(os.getenv('RUN_PX4_HOME_E2E')!='1',reason='Opt in to isolated geographic-origin flight')
+def test_actual_relocated_saudi_simulation(operational_api):
+    from pathlib import Path
+    import json
+    from app.fleet import vehicle_runtime
+    api,headers,factory=operational_api
+    op,sup=headers('mission_operator'),headers('supervisor')
+    moved=lambda points:[[47.1605+(x-8.5454),22.77135+(y-47.3977)] for x,y in points]
+    ring,route=moved(PLAN['boundary']),moved(PLAN['waypoints'])
+    parent=new_area(api,sup,name='Saudi-origin isolated test',boundary=ring)
+    mid=create(api,op,name='Saudi-origin SITL',assignment_id=parent['id'],boundary=ring,waypoints=route)
+    try:
+        assert api.post(f'/api/v1/missions/{mid}/validate',headers=op).status_code==200
+        assert api.post(f'/api/v1/missions/{mid}/start',headers=op).status_code==202
+        deadline=time.monotonic()+360
+        while time.monotonic()<deadline:
+            row=api.get(f'/api/v1/missions/{mid}',headers=op).json()
+            if row['mission']['state'] in operations.TERMINAL:break
+            time.sleep(2)
+        assert row['mission']['state']=='COMPLETED',row['mission']
+        assert len(row['observations'])>5
+        assert all(abs(o['longitude']-47.1605)<.002 and abs(o['latitude']-22.77135)<.002 for o in row['observations'])
+        with factory() as db:
+            assert db.get(VehicleLease,'sitl-01').mission_id is None
+            status=vehicle_runtime(db,'sitl-01').call('/status')
+        assert status['simulation_home']=={'latitude':route[0][1],'longitude':route[0][0]}
+        evidence={'passed':True,'simulation_only':True,'origin':status['simulation_home'],'mission_state':row['mission']['state'],'observations':len(row['observations']),'first_measured_position':{k:row['observations'][0][k] for k in ['latitude','longitude']},'sensor_data':'explicit synthetic fixtures'}
+        (Path(__file__).resolve().parents[2]/'docs/relocated-origin-evidence.json').write_text(json.dumps(evidence,indent=2),encoding='utf-8')
+        print('RELOCATED ORIGIN:',evidence)
+    finally:
+        with factory() as db:
+            vehicle_runtime(db,'sitl-01').call('/runtime/stop',{})
+            mission=db.get(Mission,mid)
+            if mission.state not in operations.TERMINAL:operations.finish(db,mission,'INTERRUPTED','Relocated-origin test cleanup')

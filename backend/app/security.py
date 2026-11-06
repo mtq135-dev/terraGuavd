@@ -12,10 +12,10 @@ from .db import get_db
 from .models import AuditEvent, AuthSession, User
 
 ROLE_PERMISSIONS = {
-    "administrator": {"dashboard:administrator", "users:read", "system:read", "audit:read", "missions:read", "reports:read"},
-    "mission_operator": {"dashboard:mission_operator", "missions:plan", "missions:read", "missions:execute", "reports:read", "survey_areas:read"},
-    "detection_analyst": {"dashboard:detection_analyst", "detections:review", "missions:read", "reports:read"},
-    "supervisor": {"dashboard:supervisor", "missions:read", "missions:assign", "missions:approve", "reports:read", "survey_areas:read", "survey_areas:manage"},
+    "administrator": {"fleet:read", "fleet:manage", "dashboard:administrator", "users:read", "system:read", "audit:read", "missions:read", "reports:read"},
+    "mission_operator": {"fleet:read", "dashboard:mission_operator", "missions:plan", "missions:read", "missions:execute", "reports:read", "survey_areas:read"},
+    "detection_analyst": {"fleet:read", "dashboard:detection_analyst", "detections:review", "missions:read", "reports:read"},
+    "supervisor": {"missions:approve", "fleet:read", "dashboard:supervisor", "missions:read", "missions:assign", "reports:read", "survey_areas:read", "survey_areas:manage"},
     "field_personnel": {"dashboard:field_personnel", "missions:assigned:read", "stop:request"},
 }
 def effective_permissions(user):

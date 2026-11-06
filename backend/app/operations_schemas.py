@@ -27,6 +27,7 @@ def valid_coordinates(points):
 
 
 class MissionPlan(ApprovalPreview):
+    uav_id: str = Field(default="sitl-01", min_length=1, max_length=40)
     name: str = Field(min_length=1, max_length=100)
     area_id: str = Field(min_length=1, max_length=80, pattern=r'^[a-zA-Z0-9_-]+$')
     waypoints: list[tuple[float, float]] = Field(min_length=2, max_length=100)

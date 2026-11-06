@@ -31,3 +31,14 @@ Additional no-flight tests:
 docker compose cp simulation/tests/test_scene.py simulation:/tmp/test_scene.py
 docker compose exec -T -e PYTHONPATH=/srv simulation /opt/terraguavd/bin/python /tmp/test_scene.py
 ```
+# Two isolated runtime channels
+
+The fleet increment runs this unchanged single-vehicle runtime in two independent Compose containers, published only on localhost 8090 and 8091. Their Gazebo partitions are distinct. Each service starts idle and launches its own x500 only on an explicit authorized mission request through FastAPI. The runtime never accepts arbitrary physical-aircraft transports. Two concurrent flights were exercised; other airframe profiles remain unsupported. See ../docs/multi-uav.md for contracts and executed evidence.
+
+## Three-channel profile matrix
+
+The three Compose services expose authenticated local runtime APIs at 8090, 8091 and 8092, each in a separate Gazebo transport partition. Runtime start accepts only `px4-x500` or `px4-x500-lidar-down`; the latter uses installed airframe 4016 and the camera-free downward-LiDAR model. A profile switch is rejected while armed. Selected model names also control the read-only scene pose filter. No camera data is exposed or consumed. Run the opt-in fleet matrix as described in [fleet-test-matrix.md](../docs/fleet-test-matrix.md); type categories without a tested allowlisted profile remain catalog-only.
+
+## Per-mission geographic world origin
+
+Explicit mission start passes the first survey waypoint as the isolated world origin. The installed PX4 Gazebo startup sets its spherical coordinates through PX4_HOME_LAT/LON/ALT before model creation; elevation is the synthetic flat-world default of 488 m. A model/origin change is forbidden while armed. Existing local route-distance, readiness and prearm checks remain active. The backend also rejects oversized executable sectors at preview/start. These coordinates are actual simulated MAVLink positions, not relabelled telemetry or surveyed terrain.

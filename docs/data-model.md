@@ -28,6 +28,10 @@ Read APIs return area status derived from stored flight/survey facts and geometr
 
 Migration 0006 adds users.denied_permissions JSON, default empty. Effective permissions are the current role template minus account restrictions. GET /api/v1/admin/roles exposes templates; PUT /api/v1/admin/users/{user_id}/access updates role/active/restrictions and revokes sessions. Identity includes active and denied_permissions.
 
-Migration 0007 adds nullable actor_id (users FK), actor_username (snapshot) and priority to mission_events. POST /api/v1/missions/{id}/field-alerts requires field_personnel role, effective field_alerts:send and current mission membership; GET requires existing mission read scope. The inbox returns the newest 20 field_alert/stop_requested records and is also included in mission detail/WS/JSON reports as field_alerts. No caller can supply sender identity. Historical events remain intact.
+## Migration 0007: fleet
 
-Migration 0008 adds missions.plan_revision and mission_approval_requests. Requests retain assignment/operator/responsible Supervisor foreign keys, submitted configuration and outside geometry snapshots, configuration hash, justification, status, UTC creation/decision times and decision actor/reason. Approval and execution statuses remain separate; see mission-approvals.md for invalidation and geographic credit rules.
+`uav_types` and `uavs` replace free-text-only vehicle identity with registered type/vehicle records. `missions.uav_id`, `survey_attempts.uav_id`, and `vehicle_leases.id` reference `uavs.id`; `uavs.type_id` references `uav_types.id`. Runtime slots are unique and allowlisted; legacy identifiers receive inactive catalog records without rewriting append-only attempts. Each mission retains one vehicle; distinct vehicles per parent area are derived from linked missions. Types without an allowlisted x500 quadrotor profile are catalog-only. See multi-uav.md for exact tested scope and evidence.
+
+## Migration 0008: third simulation binding
+
+The runtime-slot check permits `sitl-03` in addition to `sitl-01` and `sitl-02`. A downward-LiDAR x500 type, third vehicle and lease are provisioned without user accounts. Rollback retains registered rows/history and installs the previous slot constraint as NOT VALID; reapplication preserves those rows. No tables or survey fields are added.

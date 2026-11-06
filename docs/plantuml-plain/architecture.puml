@@ -1,0 +1,32 @@
+@startuml
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 18
+skinparam componentStyle rectangle
+skinparam classAttributeIconSize 0
+skinparam classBackgroundColor #F7F9FB
+skinparam classBorderColor #4B5966
+skinparam ArrowColor #465565
+rectangle "Web app\nReact / TypeScript" as Web
+rectangle "Field client\nFlutter" as Mobile
+rectangle "Backend\nFastAPI / RBAC / planning / fleet" as API
+database "PostgreSQL / PostGIS" as DB
+rectangle "Authenticated UAV adapter" as Adapter
+package "Isolated simulation runtimes" {
+ rectangle "UAV 01\nPX4 / Gazebo" as S1
+ rectangle "UAV 02\nPX4 / Gazebo" as S2
+ rectangle "UAV 03\nPX4 / Gazebo" as S3
+}
+Web --> API : REST / WebSocket
+Mobile --> API : REST / polling
+API --> DB : read / write
+API --> Adapter : selected UAV / lease
+Adapter --> S1 : MAVLink
+Adapter --> S2 : MAVLink
+Adapter --> S3 : MAVLink
+note bottom of Adapter
+  Each world starts near its mission's first waypoint.
+  Startup never arms or starts flight.
+end note
+@enduml

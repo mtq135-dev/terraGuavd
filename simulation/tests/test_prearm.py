@@ -8,6 +8,35 @@ from terraguavd_simulation import server
 
 
 class PrearmTests(unittest.TestCase):
+    def test_unknown_profile_is_rejected_before_process_launch(self):
+        with patch.object(server.subprocess,'Popen') as launch:
+            with self.assertRaises(server.HTTPException):server.Vehicle().start('physical-or-unknown')
+            launch.assert_not_called()
+    def test_profile_switch_while_armed_never_stops_or_launches_process(self):
+        self.vehicle.snapshot=Mock(return_value={'armed':True})
+        self.vehicle.stop=Mock()
+        with patch.object(server.subprocess,'Popen') as launch:
+            with self.assertRaises(server.HTTPException) as error:self.vehicle.start('px4-x500-lidar-down')
+            self.assertEqual(error.exception.status_code,409)
+            self.vehicle.stop.assert_not_called()
+            launch.assert_not_called()
+
+    def test_origin_switch_while_armed_is_rejected(self):
+        self.vehicle.snapshot=Mock(return_value={'armed':True})
+        self.vehicle.stop=Mock()
+        with patch.object(server.subprocess,'Popen') as launch:
+            with self.assertRaises(server.HTTPException):self.vehicle.start('px4-x500',{'latitude':22.77,'longitude':47.16})
+            launch.assert_not_called();self.vehicle.stop.assert_not_called()
+
+    def test_geographic_origin_is_passed_only_to_isolated_process_environment(self):
+        vehicle=server.Vehicle();vehicle.scene=Mock()
+        with patch.object(server,'SceneBridge',return_value=Mock()),patch.object(server.mavutil,'mavlink_connection',return_value=Mock()),patch.object(server.threading,'Thread',return_value=Mock()),patch.object(server.subprocess,'Popen',return_value=Mock()) as launch,patch('builtins.open',return_value=Mock()):
+            vehicle.start('px4-x500',{'latitude':22.77,'longitude':47.16})
+            environment=launch.call_args.kwargs['env']
+            self.assertEqual(environment['PX4_HOME_LAT'],'22.77')
+            self.assertEqual(environment['PX4_HOME_LON'],'47.16')
+            self.assertEqual(environment['PX4_HOME_ALT'],'488')
+
     def setUp(self):
         self.vehicle = server.Vehicle()
         self.vehicle.process = Mock()

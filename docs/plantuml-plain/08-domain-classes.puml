@@ -1,0 +1,99 @@
+@startuml
+!pragma layout smetana
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 18
+skinparam classAttributeIconSize 0
+skinparam classBackgroundColor #F7F9FB
+skinparam classBorderColor #4B5966
+skinparam ArrowColor #465565
+skinparam nodesep 35
+skinparam ranksep 40
+hide circle
+class User {
+  role; active; permissionRestrictions
+  + effectivePermissions()
+}
+class SurveyArea {
+  name; boundary; revision; deadline
+  + reassignOperator()
+}
+class AssignmentRevision {
+  kind; snapshot; recordedAt
+}
+class UAVType {
+  name; category; simulationProfile
+  specifications
+}
+class UAV {
+  name; active; runtimeSlot; registeredAt
+}
+class Mission {
+  boundary; route; altitude; speed
+  state; syntheticSensorsSelected; selectedUAV
+  + validatePlan()
+  + requestCommand()
+}
+class SurveyAttempt {
+  outcome; startedAt; finishedAt
+}
+class CoverageSnapshot <<value object>> {
+  geometry; percentage; algorithmVersion
+  simulated
+}
+class Observation {
+  sequence; position; altitude; speed
+  battery; source; recordedAt
+  syntheticSensorData [optional]
+}
+class PotentialTarget {
+  location; confidence; fixtureLabel
+  processingVersion; simulated
+}
+class AnalystAssessment {
+  assessment; notes; recordedAt
+}
+class MissionEvent {
+  kind; detail; recordedAt
+}
+User "1" -- "0..*" SurveyArea : creates >
+User "1" -- "0..*" SurveyArea : assigned operator >
+SurveyArea "1" *-- "1..*" AssignmentRevision : retains
+User "1" -- "0..*" AssignmentRevision : records revision >
+SurveyArea "0..1" -- "0..*" Mission : groups >
+User "1" -- "0..*" Mission : operates >
+User "0..*" -- "0..*" Mission : field monitoring >
+UAVType "1" -- "0..*" UAV : describes >
+UAV "1" -- "0..*" Mission : selected for >
+UAV "1" -- "0..*" SurveyAttempt : preserves identity >
+Mission "1" -- "0..1" SurveyAttempt : finalizes >
+SurveyAttempt "1" *-- "1" CoverageSnapshot : contains
+Mission "1" *-- "0..*" Observation : records
+Mission "1" *-- "0..*" MissionEvent : records
+Observation "1" -- "0..1" PotentialTarget : may produce >
+Mission "1" -- "0..*" PotentialTarget : contains >
+PotentialTarget "1" -- "0..*" AnalystAssessment : receives >
+User "1" -- "0..*" AnalystAssessment : authors assessment >
+note bottom of SurveyArea
+  Current missions require an assignment.
+  0..1 preserves legacy unassigned missions.
+  Sub-mission is a Mission within its SurveyArea.
+end note
+note bottom of MissionEvent
+  Alert = event with kind stop_requested,
+  potential_target, failed or interrupted.
+  No separate recipient entity is stored.
+end note
+note bottom of SurveyAttempt
+  At most one finalized attempt per Mission.
+  A second survey uses a new Mission.
+  CoverageSnapshot is stored in the attempt.
+end note
+legend bottom
+  Analysis model: conceptual attributes and responsibilities, not SQL tables.
+  Report content is generated from retained domain records; not a stored entity.
+  Synthetic features reside in Observation; live coverage is calculated on request.
+  FR-13–FR-27; FR-35; FR-47–FR-68; Section 3.1.8.
+endlegend
+@enduml

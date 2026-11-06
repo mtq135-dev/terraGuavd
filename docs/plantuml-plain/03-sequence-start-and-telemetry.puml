@@ -1,0 +1,60 @@
+@startuml
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 18
+skinparam sequenceMessageAlign center
+skinparam ParticipantPadding 12
+skinparam maxMessageSize 280
+hide footbox
+actor "Mission Operator" as O
+control "FastAPI" as API
+control "Mission runner" as R
+participant "Simulation adapter\nPX4 / Gazebo" as SIM
+database "Store" as DB
+O -> API : Explicit start of READY mission
+API -> DB : Lock mission and vehicle lease;\nrecheck access and geometry
+alt Vehicle reserved / checks fail
+  API --> O : Reject start
+else Start accepted
+  API -> DB : Reserve selected UAV; set STARTING_SIMULATION
+  API -> R : Schedule one runner
+  API --> O : Start accepted (202)
+  R -> SIM : Start selected model and mission-local origin
+  SIM -> SIM : Set Gazebo geographic origin near first waypoint;\nstart simulator; no flight command
+  R -> DB : Set WAITING_FOR_VEHICLE
+  loop Wait for connection readiness (up to 120 s)
+    R -> SIM : Read status
+    SIM --> R : Process alive; heartbeat and position < 4 s
+  end
+  R -> DB : Set UPLOADING
+  R -> SIM : Upload validated plan
+  SIM -> SIM : Upload route with final return-to-launch item
+  R -> SIM : Explicit mission start
+  SIM -> SIM : Wait for fresh pre-arm health (up to 30 s)
+  SIM -> SIM : Arm; start mission
+  R -> DB : Set EXECUTING
+  loop Until terminal outcome or runner failure
+    R -> SIM : Read vehicle snapshot
+    SIM --> R : Readiness, armed flag and mission progress
+    R -> DB : Store telemetry; process selected fixtures
+  end
+  alt Runner failure at startup or execution
+    R -> SIM : Attempt runtime stop
+    R -> DB : Record FAILED and retained error;\nsave snapshot and release reservation
+  else Armed-to-disarmed outcome
+    R -> DB : Record COMPLETED / CANCELLED / INTERRUPTED;\nsave snapshot and release reservation
+  end
+end
+note over API, DB
+  Authenticated mission snapshots: WebSocket every 2 s.
+  Web interface also polls selected mission every 5 s.
+  Completion: armed then disarmed, not CANCELLING,
+  reached >= total - 2. Cancellation resolves to CANCELLED.
+end note
+note over R, SIM
+  Runner error: attempt runtime stop, record FAILED with error,
+  preserve coverage and release the lease. Startup/restart never
+  automatically resumes an unfinished flight. FR-28–FR-46.
+end note
+@enduml

@@ -12,10 +12,15 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 from pymavlink import mavutil
 from .scene import SceneBridge
+from typing import Literal
+
+PROFILES={'px4-x500':('gz_x500','x500_0'),'px4-x500-lidar-down':('gz_x500_lidar_down','x500_lidar_down_0')}
 
 
 class Vehicle:
     def __init__(self):
+        self.profile='px4-x500'
+        self.home=None
         self.process = None
         self.link = None
         self.cv = threading.Condition()
@@ -35,9 +40,18 @@ class Vehicle:
         self.total = 0
         self.scene = SceneBridge()
 
-    def start(self):
+    def start(self,profile='px4-x500',home=None):
+        if home is not None:
+            home=RuntimeHome.model_validate(home).model_dump()
+        if profile not in PROFILES:raise HTTPException(422,'Unsupported isolated model profile')
         if self.process and self.process.poll() is None:
-            return
+            if profile==self.profile and home==self.home:return
+            if self.snapshot()['armed']:raise HTTPException(409,'Cannot change an armed simulation model or origin')
+            self.stop()
+        self.profile=profile
+        self.home=home
+        sim_model,model_name=PROFILES[profile]
+        self.scene=SceneBridge(model_name)
         self.messages.clear()
         self.last_heartbeat = 0
         self.last_position = 0
@@ -47,8 +61,14 @@ class Vehicle:
         self.total = 0
         self.link = mavutil.mavlink_connection("udpin:127.0.0.1:14540", source_system=245)
         log = open('/tmp/terraguavd-px4.log', 'ab', buffering=0)
+        environment={k:v for k,v in os.environ.items() if k not in {'PX4_HOME_LAT','PX4_HOME_LON','PX4_HOME_ALT'}}
+        environment.update({'HEADLESS':'1','PX4_SIM_MODEL':sim_model})
+        if home is not None:
+            # PX4's installed px4-rc.gzsim sets Gazebo spherical coordinates before model creation.
+            # 488 m is the synthetic flat world's default reference elevation, not surveyed terrain.
+            environment.update({'PX4_HOME_LAT':str(home['latitude']),'PX4_HOME_LON':str(home['longitude']),'PX4_HOME_ALT':'488'})
         self.process = subprocess.Popen(["px4-gazebo", "-d"], stdout=log, stderr=log,
-                                        env={**os.environ, "HEADLESS": "1", "PX4_SIM_MODEL": "gz_x500"}, start_new_session=True)
+                                        env=environment, start_new_session=True)
         self.started_at = time.monotonic()
         self.receiver = threading.Thread(target=self.receive, daemon=True)
         self.receiver.start()
@@ -114,7 +134,7 @@ class Vehicle:
         p = self.messages.get('GLOBAL_POSITION_INT')
         battery = self.messages.get('SYS_STATUS')
         heartbeat = self.messages.get('HEARTBEAT')
-        return {'runtime': 'px4-gazebo', 'simulated': True, 'ready': self.ready(),
+        return {'runtime': 'px4-gazebo', 'simulated': True, 'ready': self.ready(), 'simulation_profile':self.profile,'simulation_home':self.home,
                 'running': bool(self.process and self.process.poll() is None),
                 'armed': bool(heartbeat and heartbeat.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED),
                 'latitude': p.lat / 1e7 if p else None, 'longitude': p.lon / 1e7 if p else None,
@@ -203,10 +223,18 @@ def scene():
     return vehicle.scene.snapshot()
 
 
+class RuntimeHome(BaseModel):
+    latitude:float=Field(ge=-85,le=85,allow_inf_nan=False)
+    longitude:float=Field(ge=-180,le=180,allow_inf_nan=False)
+
+class RuntimeStart(BaseModel):
+    profile:Literal['px4-x500','px4-x500-lidar-down']='px4-x500'
+    home:RuntimeHome|None=None
+
 @app.post('/runtime/start')
-def start_runtime():
+def start_runtime(body:RuntimeStart=RuntimeStart()):
     with vehicle.command_lock:
-        vehicle.start()  # Deliberately no upload, arm or mission command.
+        vehicle.start(body.profile,body.home.model_dump() if body.home else None)  # Deliberately no upload, arm or mission command.
     return vehicle.snapshot()
 
 

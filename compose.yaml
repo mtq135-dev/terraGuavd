@@ -4,10 +4,43 @@ services:
     build: ./simulation
     environment:
       SIMULATION_SECRET: ${SIMULATION_SECRET:?Run scripts/setup.ps1}
+      GZ_PARTITION: terraguavd-sitl-01
       HEADLESS: "1"
       PX4_SIM_MODEL: gz_x500
     ports:
       - "127.0.0.1:8090:8090"
+    healthcheck:
+      test: [CMD, /opt/terraguavd/bin/python, -c, "import socket; socket.create_connection(('127.0.0.1',8090),3).close()"]
+      interval: 3s
+      timeout: 4s
+      retries: 30
+    init: true
+    stop_grace_period: 20s
+  simulation-2:
+    build: ./simulation
+    environment:
+      SIMULATION_SECRET: ${SIMULATION_SECRET:?Run scripts/setup.ps1}
+      GZ_PARTITION: terraguavd-sitl-02
+      HEADLESS: "1"
+      PX4_SIM_MODEL: gz_x500
+    ports:
+      - "127.0.0.1:8091:8090"
+    healthcheck:
+      test: [CMD, /opt/terraguavd/bin/python, -c, "import socket; socket.create_connection(('127.0.0.1',8090),3).close()"]
+      interval: 3s
+      timeout: 4s
+      retries: 30
+    init: true
+    stop_grace_period: 20s
+  simulation-3:
+    build: ./simulation
+    environment:
+      SIMULATION_SECRET: ${SIMULATION_SECRET:?Run scripts/setup.ps1}
+      GZ_PARTITION: terraguavd-sitl-03
+      HEADLESS: "1"
+      PX4_SIM_MODEL: gz_x500
+    ports:
+      - "127.0.0.1:8092:8090"
     healthcheck:
       test: [CMD, /opt/terraguavd/bin/python, -c, "import socket; socket.create_connection(('127.0.0.1',8090),3).close()"]
       interval: 3s

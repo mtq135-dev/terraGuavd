@@ -1080,3 +1080,24 @@ dd {
 .assignment-select small {
   color: var(--muted);
 }
+
+.planning-steps {
+  padding-left: 22px;
+  line-height: 1.9;
+  color: #c4d1d9;
+}
+.planning-context {
+  border-left: 3px solid #79c9b4;
+  padding: 8px 16px;
+  margin: 16px 0;
+  background: #10212c;
+}
+.planning-map-label {
+  background: #10212ce8;
+  color: #efece0;
+  border: 1px solid #486171;
+  box-shadow: none;
+  font-size: 11px;
+  white-space: normal;
+  max-width: 200px;
+}

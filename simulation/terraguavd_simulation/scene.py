@@ -6,9 +6,9 @@ import threading
 import time
 
 
-def decode_pose(line):
+def decode_pose(line,model_name='x500_0'):
     data = json.loads(line)
-    model = next((p for p in data.get('pose', []) if p.get('name') == 'x500_0'), None)
+    model = next((p for p in data.get('pose', []) if p.get('name') == model_name), None)
     if model is None:
         return None
     position = [float(model.get('position', {}).get(k, 0)) for k in ('x', 'y', 'z')]
@@ -17,12 +17,13 @@ def decode_pose(line):
         raise ValueError('Invalid Gazebo pose')
     if sum(v*v for v in quaternion) < .01:
         raise ValueError('Invalid Gazebo orientation')
-    return {'name': 'x500_0', 'position': position, 'quaternion': quaternion,
+    return {'name': model_name, 'position': position, 'quaternion': quaternion,
             'simulation_time': data.get('header', {}).get('stamp', {})}
 
 
 class SceneBridge:
-    def __init__(self):
+    def __init__(self,model_name='x500_0'):
+        self.model_name=model_name
         self.process = None
         self.thread = None
         self.lock = threading.Lock()
@@ -40,7 +41,7 @@ class SceneBridge:
     def receive(self, process):
         for line in process.stdout:
             try:
-                pose = decode_pose(line)
+                pose = decode_pose(line,self.model_name)
                 if pose is not None:
                     with self.lock:
                         self.pose = pose

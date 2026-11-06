@@ -15,6 +15,8 @@ export type AreaProgress = {
   notice: string;
 };
 export type SurveyArea = {
+  uav_ids?: string[];
+  uav_count?: number;
   id: string;
   name: string;
   description: string;

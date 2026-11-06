@@ -20,6 +20,9 @@ def test_migration_postgis_and_append_only_audit():
     url = os.environ["TEST_POSTGIS_URL"]
     env = {**os.environ, "DATABASE_URL": url}
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], env=env, check=True)
+    # Roll back and reapply the profile/channel increment without erasing registry history.
+    subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0007'], env=env, check=True)
+    subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], env=env, check=True)
     engine = create_engine(url)
     with engine.begin() as db:
         assert db.execute(text("SELECT PostGIS_Version()")).scalar_one()

@@ -1,0 +1,35 @@
+@startuml
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 19
+skinparam activityBackgroundColor #F7F9FB
+skinparam activityBorderColor #4B5966
+|Supervisor|
+start
+:Define survey boundary;
+:Select assigned Mission Operator;
+:Enter description and optional deadline;
+|FastAPI|
+if (Authorized Supervisor?) then (yes)
+else (no)
+  :Reject assignment;
+  stop
+endif
+if (Valid polygon and active Operator?) then (yes)
+  :Store assignment and initial revision;
+  :Append audit event;
+else (no)
+  :Return validation error;
+  stop
+endif
+|Mission Operator|
+:View assigned survey area;
+:Select registered UAV;
+:Plan one or more contained sectors;
+note right
+  Each sector is saved as a separate Mission.
+  Creating an assignment does not start a flight.
+end note
+stop
+@enduml

@@ -101,14 +101,17 @@ function AreaForm({
           onWaypoints={() => {}}
           boundaryOnly
         />
-        <label>
-          Assignment boundary · closed [longitude, latitude] ring
-          <textarea
-            value={boundary}
-            onChange={(event) => setBoundary(event.target.value)}
-            required
-          />
-        </label>
+        <details>
+          <summary>Advanced coordinate editing</summary>
+          <label>
+            Assignment boundary · closed [longitude, latitude] ring
+            <textarea
+              value={boundary}
+              onChange={(event) => setBoundary(event.target.value)}
+              required
+            />
+          </label>
+        </details>
         <p className="panel-note">
           Valid areas: 10 m²–100 km². Child missions keep their existing size,
           route and simulator-home limits. Reassignment transfers unflown drafts
@@ -333,7 +336,8 @@ export default function SurveyAreas({
             <p>{detail.description || "No description provided."}</p>
             <p>
               {detail.status.replaceAll("_", " ")} · Assigned to{" "}
-              {detail.operator_username} · Revision {detail.revision} · Created{" "}
+              {detail.operator_username} · {detail.uav_count ?? 0} UAVs ·
+              Revision {detail.revision} · Created{" "}
               {new Date(detail.created_at).toLocaleString()}
             </p>
             <p>

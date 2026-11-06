@@ -6,6 +6,10 @@ from terraguavd_simulation.scene import SceneBridge, decode_pose
 
 
 class SceneTests(unittest.TestCase):
+    def test_lidar_variant_pose_never_uses_the_other_model(self):
+        data=json.dumps({'pose':[{'name':'x500_0','position':{'x':99}}, {'name':'x500_lidar_down_0','position':{'x':3},'orientation':{'w':1}}]})
+        self.assertEqual(decode_pose(data,'x500_lidar_down_0')['position'][0],3)
+        self.assertIsNone(decode_pose('{"pose":[{"name":"x500_0"}]}','x500_lidar_down_0'))
     def test_only_world_uav_pose_is_selected(self):
         pose=decode_pose(json.dumps({'pose':[
             {'name':'rotor_0','position':{'x':9}},

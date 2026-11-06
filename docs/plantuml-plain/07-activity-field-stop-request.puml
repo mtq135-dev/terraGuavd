@@ -1,0 +1,42 @@
+@startuml
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 20
+skinparam activityBackgroundColor #F7F9FB
+skinparam activityBorderColor #4B5966
+|Field Personnel|
+start
+:Open an assigned mission;
+:Enter stop reason;
+:Submit stop request;
+|FastAPI|
+if (Authenticated account\ncan access mission?) then (yes)
+else (no)
+  :Reject request;
+  stop
+endif
+if (stop:request permission\nand mission active?) then (yes)
+else (no)
+  :Reject request; create no stop event;
+  stop
+endif
+:Append stop_requested\nmission event;
+:Append field_stop_requested\naudit record;
+:Commit request;\nsend no aircraft command;
+|Field Personnel|
+:Display request confirmation;
+|Mission viewers|
+:Read dashboard alerts\nor mission event list;
+:View recorded stop request;
+|Mission Operator|
+:Review the request;
+stop
+note right
+  Mission viewers = users with mission access.
+  No exclusive recipient, push notification
+  or acknowledgement workflow is implied.
+  Flight commands are separate authorized
+  operator actions. FR-61–FR-68.
+end note
+@enduml

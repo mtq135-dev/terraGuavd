@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ApprovalInbox } from "./MissionApprovals";
 import type { ApprovalListItem } from "./operations-api";
 
-vi.mock("./PlanMap", () => ({
+vi.mock("./ApprovalPlanMap", () => ({
   default: () => <div>Submitted boundary map</div>,
 }));
 afterEach(() => {

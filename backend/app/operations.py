@@ -15,20 +15,25 @@ from sqlalchemy import cast
 from sqlalchemy.dialects.postgresql import JSONB
 
 from .coverage import calculate, store_position
+from .simulation_plan import simulation_home
 from .db import SessionLocal
 from . import mission_approvals
 from .models import AuthSession, User
-from .operations_models import AnalystReview, Detection, Mission, MissionEvent, Observation, SurveyAttempt, VehicleLease
+from .operations_models import AnalystReview, Detection, Mission, MissionEvent, Observation, SurveyAttempt, VehicleLease,UAV,UAVType
 from .operations_schemas import Assignment, MissionPlan, MissionUpdate, ReviewInput, StopRequest
 from .runtime import runtime
-from .survey_areas import ACTIVE, get_area
-from .security import effective_permissions, Db, audit, current_user, digest, require
+from .fleet import vehicle_runtime as fleet_vehicle_runtime
+from .survey_areas import ACTIVE, check_mission_area, get_area
+from .security import effective_permissions, Db, ROLE_PERMISSIONS, audit, current_user, digest, require
 from terraguavd_detection.processing import VERSION, fixture, score, valid_footprint, mock_classification
 
 router = APIRouter(prefix='/api/v1')
 Identity = Annotated[User, Depends(current_user)]
 TERMINAL = {'COMPLETED','CANCELLED','INTERRUPTED','FAILED'}
 NOTICE = 'Simulation only. Potential targets are unverified. Surveyed does not mean cleared or safe.'
+
+def vehicle_runtime(db,uav_id):
+    return fleet_vehicle_runtime(db,uav_id,primary=runtime)
 
 
 def now():
@@ -134,14 +139,14 @@ def finish(db, mission, state, error=None):
             status=state, coverage_percent=coverage['coverage_percent'], geometry=coverage['geometry'],
             algorithm_version=coverage['algorithm_version'], simulated=True,
             started_at=mission.started_at, finished_at=mission.finished_at))
-    lease = db.get(VehicleLease, 'sitl-01')
+    lease = db.get(VehicleLease, mission.uav_id)
     if lease and lease.mission_id == mission.id:
         lease.mission_id = None
     db.commit()
 
 
 def check_sitl(mission):
-    if mission.runtime != 'px4-gazebo' or mission.uav_id != 'sitl-01':
+    if mission.runtime != 'px4-gazebo':
         raise HTTPException(409, 'Only the configured PX4/Gazebo simulation vehicle can execute missions')
 
 
@@ -152,22 +157,24 @@ def verify_runner_authority(db, mission):
     operator(actor, mission)
     check_sitl(mission)
     validate_geometry(db, mission)
-    lease = db.scalar(select(VehicleLease).where(VehicleLease.id == 'sitl-01').with_for_update())
+    lease = db.scalar(select(VehicleLease).where(VehicleLease.id == mission.uav_id).with_for_update())
     if not lease or lease.mission_id != mission.id:
         raise HTTPException(409, 'Mission does not own the simulation vehicle lease')
 
 
 def run_mission(mission_id):
     """Single-worker prototype runner; the database vehicle lease prevents duplicate starts."""
-    runtime_attempted = False
+    flight_runtime=None
     try:
         with SessionLocal() as db:
             mission = get_mission(db, mission_id,lock=True)
             if mission.state!='STARTING_SIMULATION':
                 return
-            verify_runner_authority(db, mission)
-            runtime_attempted = True
-            runtime.call('/runtime/start', {})
+            flight_runtime=vehicle_runtime(db,mission.uav_id)
+            profile=db.get(UAVType,db.get(UAV,mission.uav_id).type_id).simulation_profile
+            started=flight_runtime.call('/runtime/start', {'profile':profile,'home':simulation_home(mission.waypoints)})
+            if started.get('simulation_profile','px4-x500')!=profile:
+                raise RuntimeError('Runtime model does not match the registered UAV type')
             transition(db, mission, 'WAITING_FOR_VEHICLE', 'Waiting for actual SITL MAVLink position and heartbeat')
             db.commit()
         deadline = time.monotonic()+120
@@ -175,7 +182,7 @@ def run_mission(mission_id):
             with SessionLocal() as db:
                 if get_mission(db,mission_id).state!='WAITING_FOR_VEHICLE':
                     return
-            snapshot = runtime.call('/status')
+            snapshot = flight_runtime.call('/status')
             if snapshot['ready']:
                 break
             if time.monotonic()>deadline:
@@ -193,16 +200,16 @@ def run_mission(mission_id):
                 return
             verify_runner_authority(db, mission)
             plan = {'waypoints':mission.waypoints,'altitude_m':mission.altitude_m,'speed_m_s':mission.speed_m_s}
-            runtime.call('/mission/upload', plan)
+            flight_runtime.call('/mission/upload', plan)
             # Lock prevents recovery or another command from reviving an interrupted attempt.
-            runtime.call('/mission/start', {})
+            flight_runtime.call('/mission/start', {})
             transition(db, mission, 'EXECUTING', 'PX4 accepted explicit mission start')
             db.commit()
         deadline = time.monotonic()+1200
         saw_armed = False
         sequence = 0
         while time.monotonic()<deadline:
-            snapshot = runtime.call('/status')
+            snapshot = flight_runtime.call('/status')
             if not snapshot['ready']:
                 raise RuntimeError('SITL telemetry connection lost')
             saw_armed = saw_armed or snapshot['armed']
@@ -241,11 +248,11 @@ def run_mission(mission_id):
         raise RuntimeError('Simulator mission exceeded the 20 minute prototype limit')
     except Exception as exc:
         # Stop the isolated simulator on failures so no orphaned simulated flight remains.
-        if runtime_attempted:
-            try:
-                runtime.call('/runtime/stop', {})
-            except Exception:
-                pass
+        try:
+            if flight_runtime is not None:
+                flight_runtime.call('/runtime/stop', {})
+        except Exception:
+            pass
         with SessionLocal() as db:
             mission = get_mission(db, mission_id, lock=True)
             if mission.state in ACTIVE:
@@ -263,10 +270,10 @@ def recover():
         active = db.scalars(select(Mission.id).where(Mission.state.in_(ACTIVE))).all()
         if not active:
             return
-        runtime.call('/runtime/stop', {})
         for mission_id in active:
             mission=get_mission(db,mission_id,lock=True)
             if mission.state in ACTIVE:
+                vehicle_runtime(db,mission.uav_id).call('/runtime/stop', {})
                 finish(db, mission, 'INTERRUPTED', 'Backend lifecycle interrupted this attempt; simulator stopped; explicit new mission required')
 
 
@@ -292,10 +299,11 @@ def create_mission(body: MissionPlan, db: Db, user: Identity):
         raise HTTPException(403,'Mission planning permission required')
     get_area(db,body.assignment_id,user,lock=True)
     validate_fields(db,body.field_ids)
+    vehicle_runtime(db,body.uav_id)
     mission = Mission(id=identifier(),name=body.name.strip(),area_id=body.area_id,assignment_id=body.assignment_id,operator_id=user.id,
         field_ids=body.field_ids,boundary={'type':'Polygon','coordinates':[body.boundary]},
         waypoints=body.waypoints,altitude_m=body.altitude_m,speed_m_s=body.speed_m_s,
-        synthetic_sensors=body.synthetic_sensors,created_at=now())
+        synthetic_sensors=body.synthetic_sensors,uav_id=body.uav_id,created_at=now())
     if not mission.name:
         raise HTTPException(422, 'Mission name is required')
     db.add(mission)
@@ -340,13 +348,16 @@ def update_mission(mission_id: str, body: MissionUpdate, db: Db, user: Identity)
 @router.get('/missions/{mission_id}/scene')
 def gazebo_scene(mission_id: str, db: Db, user: Identity):
     mission=get_mission(db,mission_id,user)
-    lease=db.scalar(select(VehicleLease).where(VehicleLease.id=='sitl-01').with_for_update())
+    if mission.state not in ACTIVE:
+        return {'runtime':'px4-gazebo','simulated':True,'live':False,'pose':None}
+    flight_runtime=vehicle_runtime(db,mission.uav_id)
+    lease=db.scalar(select(VehicleLease).where(VehicleLease.id==mission.uav_id).with_for_update())
     # An old/assigned mission must never expose another mission's live vehicle.
     if mission.state not in ACTIVE or not lease or lease.mission_id!=mission.id:
         return {'runtime':'px4-gazebo','simulated':True,'live':False,'pose':None,
                 'notice':'Live Gazebo view is available only for this active mission.'}
     try:
-        return runtime.call('/scene')
+        return flight_runtime.call('/scene')
     except RuntimeError as exc:
         raise HTTPException(503,'Gazebo scene is unavailable') from exc
 
@@ -397,6 +408,7 @@ def validate(mission_id: str, db: Db, user: Identity):
     operator(user,mission,'missions:plan')
     if mission.state not in {'DRAFT','READY'}:
         raise HTTPException(409,'Only draft or ready plans can be validated')
+    vehicle_runtime(db,mission.uav_id)
     validate_geometry(db,mission)
     transition(db,mission,'READY','Geometry and simulation plan validated; no flight command issued')
     db.commit()
@@ -407,13 +419,17 @@ def validate(mission_id: str, db: Db, user: Identity):
 def start(mission_id: str, db: Db, user: Identity):
     mission=get_mission(db,mission_id,user,lock=True)
     operator(user,mission)
+    vehicle_runtime(db,mission.uav_id)
+    lease=db.scalar(select(VehicleLease).where(VehicleLease.id==mission.uav_id).with_for_update())
+    if not lease:
+        raise HTTPException(503,'Run database migrations first')
     if mission.state in ACTIVE:
         return serialize(mission)  # Repeated explicit start is idempotent.
     if mission.state!='READY':
         raise HTTPException(409,'Validate this draft plan before starting')
     check_sitl(mission)
     validate_geometry(db,mission)
-    lease=db.scalar(select(VehicleLease).where(VehicleLease.id=='sitl-01').with_for_update())
+    lease=db.scalar(select(VehicleLease).where(VehicleLease.id==mission.uav_id).with_for_update())
     if not lease:
         raise HTTPException(503,'Run database migrations first')
     if lease.mission_id:
@@ -437,7 +453,11 @@ def command(mission_id: str, command: Literal['pause','resume','cancel'], db: Db
     if mission.state not in permitted[command]:
         raise HTTPException(409,f'Cannot {command} a mission in {mission.state}')
     try:
-        runtime.call(f'/mission/{command}',{})
+        flight_runtime=vehicle_runtime(db,mission.uav_id)
+        lease=db.scalar(select(VehicleLease).where(VehicleLease.id==mission.uav_id).with_for_update())
+        if not lease or lease.mission_id!=mission.id:
+            raise HTTPException(409,'Mission does not own this UAV lease')
+        flight_runtime.call(f'/mission/{command}',{})
     except RuntimeError as exc:
         raise HTTPException(502,str(exc)) from exc
     transition(db,mission,{'pause':'PAUSED','resume':'EXECUTING','cancel':'CANCELLING'}[command],f'Assigned operator requested {command}')

@@ -11,6 +11,8 @@ from .models import AuditEvent, AuthSession, User
 from . import operations
 from . import mission_approvals
 from . import survey_areas
+from . import fleet
+from . import planning
 from .db import engine
 from .schemas import Dashboard, Identity, Role, SessionToken
 from .security import effective_permissions, DUMMY_HASH, ROLE_PERMISSIONS, Db, audit, bearer, current_user, digest, passwords, require
@@ -32,6 +34,7 @@ operations.router.routes.sort(key=lambda route: '{command}' in route.path)
 app.include_router(mission_approvals.router)
 app.include_router(operations.router)
 app.include_router(survey_areas.router)
+app.include_router(fleet.router)
 
 
 class Login(BaseModel):
@@ -160,3 +163,5 @@ def update_access(user_id: str, body: AccessUpdate, db: Db,
     audit(db, actor.id, f'access_updated:{user_id}')
     db.commit()
     return identity(target)
+
+app.include_router(planning.router)

@@ -8,7 +8,7 @@ import type {
   ApprovalRequest,
   MissionApproval,
 } from "./operations-api";
-import PlanMap from "./PlanMap";
+import PlanMap from "./ApprovalPlanMap";
 
 type Point = [number, number];
 const outsideWarning =

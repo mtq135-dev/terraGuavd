@@ -16,9 +16,9 @@ Read [REQUIREMENTS.md](REQUIREMENTS.md), [architecture.md](architecture.md), [AG
 - Original responsive detection cards with selectable details and predefined Potential Mine, Metallic Object, Unknown and Rock labels from new `demo/2` fixtures. These are synthetic, unverified examples, not predictions. Existing records retain their stored classifications; experimental scoring and thresholds are unchanged.
 - PostGIS sensor-footprint coverage with quality/altitude/speed rules, spatial target storage and append-only survey snapshots. Completed, cancelled and failed attempts preserve their own coverage; flight completion never forces 100% coverage.
 - Authorized JSON/CSV reports plus browser print/save PDF.
-- Supervisor-owned survey area assignments, operator assignment/reassignment, change history and linked sub-missions. Progress unions completed valid footprints clipped to the assigned area. Valid outside-area drafts can be saved, but require a current, configuration-bound approval from the assignment's creating Supervisor before validation or start.
-- Responsive TerraGuavd Ivory and Evergreen themes with matching logos, a System default, and a saved browser override. Field Personnel can change the theme under **More → Appearance** in the web app.
-- PostgreSQL/PostGIS Docker Compose build, persistent volume, database readiness and versioned migrations through 0008 for identity, operations, spatial records, survey assignments and boundary approvals.
+- Supervisor-owned large survey area assignments, operator reassignment, revision history and linked sub-missions. Progress unions completed valid sensor footprints clipped to the assigned area. Valid outside-area drafts require a current, configuration-bound approval from the assignment's creating Supervisor before validation or start; the drawing planner currently restricts lane previews to contained sectors.
+- Responsive TerraGuavd Ivory and Evergreen themes with matching logos, a System default and a saved browser override. Fleet and drawing tools use the shared theme variables. Field Personnel can change appearance under **More → Appearance** in the web app.
+- PostgreSQL/PostGIS Docker Compose build, persistent volume, database readiness and versioned migrations through 0010 for identity, operations, spatial records, survey assignments, fleet registration, alert provenance and boundary approvals. This branch integrates two migration histories; review [the migration note](docs/REPORT.md) before upgrading an existing upstream database.
 - Flutter Field Personnel source with authentication, polling, assigned mission cards, telemetry, a geographic schematic, target details, survey history and stop requests. Native SDK/device builds remain unverified; the responsive Field Personnel web interface is browser tested.
 
 ## Windows 11 setup
@@ -55,7 +55,7 @@ Terminal 2:
 
 Open [TerraGuavd](http://127.0.0.1:5173), [API docs](http://127.0.0.1:8000/docs), or [readiness](http://127.0.0.1:8000/api/v1/health/ready). Vite proxies `/api` to port 8000; browser tokens stay in memory. Reload requires sign-in; sessions expire after 30 minutes. Use a Field Personnel account and a narrow viewport for the mobile-first web interface. Native Flutter instructions are in [mobile/README.md](mobile/README.md).
 
-Use one API process/worker and one active test session for the single configured `sitl-01` vehicle. Stop foreground servers with Ctrl+C. Stop supporting services with `docker compose stop db simulation`; data remains in the named volume. Scripts start the idle simulation API, not a flight. PX4/Gazebo start/reuse is triggered by an assigned operator's explicit mission start; runtime startup itself never arms or uploads. After an API restart, unfinished attempts are interrupted and the isolated simulator is stopped rather than automatically resumed. If you edit a database password after volume initialization, changing `.env` alone does not rotate it.
+Use one API process/worker. Three isolated x500 channels, `sitl-01`, `sitl-02` and `sitl-03`, can run different assigned missions concurrently; do not run integration tests during another simulation session. Stop foreground servers with Ctrl+C. Stop supporting services with `docker compose stop db simulation simulation-2`; data remains in the named volume. Scripts start the idle simulation API, not a flight. PX4/Gazebo start/reuse is triggered by an assigned operator's explicit mission start; runtime startup itself never arms or uploads. After an API restart, unfinished attempts are interrupted and the isolated simulator is stopped rather than automatically resumed. If you edit a database password after volume initialization, changing `.env` alone does not rotate it.
 
 ## Run a survey
 
@@ -115,10 +115,26 @@ CI configures unit/frontend and AMD64/ARM64 PostGIS jobs; a manually triggered w
 | `scripts/` | Windows setup, startup, account provisioning, checks |
 | `docs/` | Decisions, data-model plan, visual references, test evidence |
 
-Remaining beyond the connected simulation prototype: validated physical GPR/metal models and calibration data, real-aircraft integration, native Flutter/device builds, background push notifications, configurable approval policy, multiple vehicles, production HTTPS/throttling/MFA/recovery/privilege separation and deployment hardening. Account creation remains explicit through the local provisioning script. The app is for local development, not operational landmine clearance.
+Remaining beyond the connected simulation prototype: validated physical GPR/metal models and calibration data, real-aircraft integration, native Flutter/device builds, background push notifications, configurable approval policy, additional verified vehicle models/runtime channels, production HTTPS/throttling/MFA/recovery/privilege separation and deployment hardening. Account creation remains explicit through the local provisioning script. The app is for local development, not operational landmine clearance.
 
 PostGIS and the pinned official PX4/Gazebo image built and ran on the local ARM64 Docker engine. Both base images publish AMD64/ARM64 manifests; native AMD64 runtime and full architecture matrices remain unverified. Windows Python used AMD64 wheels. See [data-model.md](docs/data-model.md) for schema and session contracts.
 
 ## Account access administration
 
 Sign in as Administrator and open User Management or Roles & Permissions. Select Edit access, choose a role, toggle Account enabled and restrict permissions within that role, then Save access. Restrictions are enforced by FastAPI, including operational endpoints and WebSocket mission access. Changes revoke all sessions for that account. Administrators cannot edit their own access; another administrator is required. Active mission operators cannot be changed until their mission ends. Role templates remain fixed; per-account controls can remove permissions but cannot grant permissions outside the selected role. Account creation still uses the explicit provisioning script.
+
+## Multi-UAV registry and concurrent simulation
+
+Migration 0007 adds UAV types and registered vehicles. Administrators use UAV Management; operators select a UAV when planning; Supervisors inspect the fleet and distinct UAV counts per area. Three separate simulation services support x500 and its downward-LiDAR variant. Other aircraft families remain catalog-only. Run `scripts/check-postgis.ps1 -IncludeMultiSitl` for the disposable-database concurrent flight check. See [multi-UAV design, contracts and actual test evidence](docs/multi-uav.md).
+
+## Project report
+
+The [current plain report](docs/REPORT.md) includes Word and PDF files plus editable PlantUML sources. It uses white pages, black headings and real Light-theme interface captures. Report database attributes currently document the fleet schema through migration 0008; the later approval schema remains a documented content follow-up.
+
+## Fleet test scenarios
+
+The Administrator registers UAVs, the Supervisor assigns the survey area to an Operator, and that Operator selects one UAV per mission. Three isolated simulation channels and two camera-free x500 variants are implemented. Other aircraft categories remain catalog-only. See [fleet-test-matrix.md](docs/fleet-test-matrix.md) for the workflow, actual flight evidence and tested limits.
+
+## Reference-style mission planning
+
+Mission Planning now uses the supplied gradProjectPrototype drawing interaction: rectangle, circle, free shape, draggable outline handles, measurements and undo/redo. Choose an assigned area and UAV, draw a sector, and review the generated survey lanes before saving a draft mission. Add sector retains existing unsaved sectors; drafts survive refresh within the same browser-tab session. Saved missions still require explicit validation/start, and existing PostGIS containment and isolated-simulator limits remain authoritative. See the reference planning UX entry in [consistency-review.md](docs/consistency-review.md).

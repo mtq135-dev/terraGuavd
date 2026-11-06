@@ -3,6 +3,7 @@ import { Dashboard, Identity, request } from "./api";
 import { Empty, Metric, Panel } from "./components";
 
 import AccountAccess from "./AccountAccess";
+import Fleet from "./Fleet";
 import PrototypeWorkspace from "./PrototypeWorkspace";
 import { ThemeControl } from "./ThemeControl";
 import { useTheme } from "./theme";
@@ -447,17 +448,6 @@ export default function App() {
                 )}
                 {["User Management", "Roles & Permissions"].includes(view) &&
                   token && <AccountAccess token={token} actorId={user.id} />}
-                {view === "UAV Management" && (
-                  <Panel title="Configured simulated vehicle">
-                    <strong>sitl-01 · PX4 x500 / Gazebo</strong>
-                    <p className="muted">
-                      One isolated simulator is configured. Physical aircraft
-                      registration is outside this prototype.
-                    </p>
-                    <button onClick={checkHealth}>Check services</button>
-                    <p role="status">{runtimeLabel}</p>
-                  </Panel>
-                )}
                 {view === "Audit Logs" && (
                   <Panel title="Audit logs">
                     <button
@@ -488,6 +478,9 @@ export default function App() {
                 )}
               </>
             )}
+            {user.role === "administrator" &&
+              view === "UAV Management" &&
+              token && <Fleet token={token} user={user} />}
             {user.role !== "administrator" && token && (
               <PrototypeWorkspace
                 token={token}

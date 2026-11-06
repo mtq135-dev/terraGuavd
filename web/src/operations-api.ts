@@ -1,4 +1,5 @@
 export type Mission = {
+  uav_id?: string;
   id: string;
   name: string;
   area_id: string;

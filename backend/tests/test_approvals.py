@@ -10,6 +10,9 @@ from app.security import passwords
 
 def test_outside_approval_is_scoped_and_stale_start_never_queues(client, monkeypatch):
     api, sessions = client
+    from test_auth import login
+    from test_fleet import register
+    register(api, login(api,'administrator'))
     now = datetime.now(UTC)
     parent_boundary = {'type': 'Polygon', 'coordinates': [[[0, 0], [1, 0], [0, 1], [0, 0]]]}
     boundary = {'type': 'Polygon', 'coordinates': [[[0, 0], [2, 0], [0, 2], [0, 0]]]}
@@ -22,8 +25,7 @@ def test_outside_approval_is_scoped_and_stale_start_never_queues(client, monkeyp
         db.flush()
         db.add(Mission(id='outside', name='Outside draft', area_id='demo', assignment_id='parent',
                        operator_id='mission_operator', boundary=boundary, waypoints=[[0, 0], [1, 0]],
-                       altitude_m=5, speed_m_s=2, created_at=now))
-        db.add(VehicleLease(id='sitl-01'))
+                       altitude_m=5, speed_m_s=2, created_at=now,uav_id='uav1'))
 
     def spatial(*_):
         return {'required': True, 'outside_geometry': boundary, 'outside_m2': 20.0}
@@ -69,4 +71,4 @@ def test_outside_approval_is_scoped_and_stale_start_never_queues(client, monkeyp
     assert api.post(mission + '/start', headers=op).status_code == 422
     assert not queued
     with sessions() as db:
-        assert db.get(VehicleLease, 'sitl-01').mission_id is None
+        assert db.get(VehicleLease, 'uav1').mission_id is None

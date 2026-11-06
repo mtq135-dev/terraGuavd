@@ -1,0 +1,54 @@
+@startuml
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 19
+skinparam activityBackgroundColor #F7F9FB
+skinparam activityBorderColor #4B5966
+start
+partition "Observation footprint" {
+  :Read mission observation;
+  if (Synthetic sensor provenance present?) then (yes)
+    if (Quality >= 0.8, altitude 1–8 m,\nand speed 0–3 m/s?) then (yes)
+      :Store geographic buffer at position\nwith 2 m buffer distance;
+    else (no)
+      :Store no contributing footprint;
+    endif
+  else (no)
+    :Store no contributing footprint;
+  endif
+}
+partition "Mission evidence" {
+  :Union available valid footprints;
+  :Clip union to planned mission polygon;
+  :Calculate experimental mission coverage;
+  if (Attempt finishes?) then (yes)
+    :Append outcome and final coverage snapshot\nfor the mission;
+  else (no)
+    :Keep coverage available as live evidence;
+  endif
+}
+partition "Supervisor area progress" {
+  :Read assigned area and linked missions;
+  :Union current-profile synthetic snapshots\nfrom COMPLETED attempts only;
+  :Clip completed union to assigned area;
+  :Union footprints of active linked missions;
+  :Clip live union to area; subtract completed ground;
+  :Remaining = area minus completed and live ground;
+  :Completed percentage uses completed area only;
+  if (Completed geometry covers the whole area?) then (yes)
+    :Show 100% completed;
+  else (no)
+    :Cap rounded progress at 99.99%;
+  endif
+  :Display completed, live and remaining layers;
+}
+:Show experimental / no-clearance safety wording;
+stop
+note right
+  Cancelled / failed / interrupted evidence remains
+  in attempt history but does not add completed progress.
+  Mission completion alone never creates 100% coverage.
+  FR-51–FR-57; FR-70.
+end note
+@enduml
