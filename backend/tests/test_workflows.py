@@ -100,8 +100,10 @@ def test_survey_area_authorization_containment_revision_and_reassignment(operati
     missing={**PLAN};missing.pop('assignment_id')
     assert api.post('/api/v1/missions',headers=op,json=missing).status_code==422
     outside=[[x+.001,y] for x,y in PLAN['boundary']]
-    assert api.post('/api/v1/missions',headers=op,json={**PLAN,'assignment_id':aid,'boundary':outside,
-        'waypoints':[[x+.001,y] for x,y in PLAN['waypoints']]}).status_code==422
+    drafted = api.post('/api/v1/missions',headers=op,json={**PLAN,'assignment_id':aid,'boundary':outside,
+        'waypoints':[[x+.001,y] for x,y in PLAN['waypoints']]})
+    assert drafted.status_code==201, drafted.text
+    assert drafted.json()['state']=='DRAFT' and drafted.json()['approval']['required']
     mid=create(api,op,assignment_id=aid)
     assert api.post(f'/api/v1/missions/{mid}/validate',headers=op).status_code==200
     assert api.post(f'/api/v1/missions/{mid}/assign',headers=sup,json={'operator_id':'other_operator'}).status_code==409
@@ -136,6 +138,56 @@ def test_survey_area_authorization_containment_revision_and_reassignment(operati
     with pytest.raises(DBAPIError,match='append-only'):
         with factory.begin() as db:
             db.execute(text('DELETE FROM survey_area_events WHERE assignment_id=:id'),{'id':aid})
+
+
+def test_outside_mission_preview_decisions_revision_and_explicit_start(operational_api, monkeypatch):
+    api, headers, factory = operational_api
+    sup, op = headers('supervisor'), headers('mission_operator')
+    area = new_area(api, sup)
+    outside = [[x+.001, y] for x,y in PLAN['boundary']]
+    waypoints = [[x+.001, y] for x,y in PLAN['waypoints']]
+    plan = {**PLAN, 'assignment_id': area['id'], 'boundary': outside, 'waypoints': waypoints}
+    preview = api.post('/api/v1/mission-approval-preview', headers=op,
+                       json={'assignment_id': area['id'], 'boundary': outside})
+    assert preview.status_code == 200 and preview.json()['outside_m2'] > 0
+    mid = create(api, op, **plan)
+    url = f'/api/v1/missions/{mid}'
+    assert api.post(url+'/validate', headers=op).status_code == 422
+    assert api.post(url+'/start', headers=op).status_code == 409
+
+    def request():
+        response = api.post(url+'/approval-requests', headers=op, json={'reason': 'Survey adjacent site'})
+        assert response.status_code == 200, response.text
+        return response.json()['request']['id']
+
+    def decide(request_id, decision, reason=''):
+        return api.post(f'/api/v1/mission-approvals/{request_id}/decision', headers=sup,
+                        json={'decision': decision, 'reason': reason})
+
+    first = request()
+    assert request() == first
+    assert decide(first, 'Rejected', 'Outside scope this week').status_code == 200
+    assert api.post(url+'/validate', headers=op).status_code == 422
+    assert decide(request(), 'Approved').status_code == 200
+    assert api.post(url+'/validate', headers=op).status_code == 200
+    updated = api.put(url, headers=op, json={**plan, 'plan_revision': 1, 'altitude_m': 6})
+    assert updated.status_code == 200, updated.text
+    assert updated.json()['approval']['status'] == 'Invalidated'
+    assert api.put(url, headers=op, json={**plan, 'plan_revision': 1}).status_code == 409
+    assert api.post(url+'/validate', headers=op).status_code == 422
+    assert decide(request(), 'Approved').status_code == 200
+    assert api.put(f'/api/v1/survey-areas/{area["id"]}', headers=sup,
+                   json={**area_body(description='Updated metadata'), 'revision': 1}).status_code == 200
+    assert api.get(url+'/approval', headers=op).json()['status'] == 'Invalidated'
+    assert decide(request(), 'Approved').status_code == 200
+    queued = []
+    monkeypatch.setattr(operations, 'schedule', queued.append)
+    assert api.post(url+'/validate', headers=op).status_code == 200
+    assert queued == []
+    assert api.post(url+'/start', headers=op).status_code == 202
+    assert queued == [mid]
+    with factory() as db:
+        operations.finish(db, db.get(Mission, mid), 'FAILED', 'Intentional test cleanup')
 
 
 def test_survey_area_invalid_polygons_and_operators(operational_api):

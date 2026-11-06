@@ -8,7 +8,18 @@ import {
 } from "react";
 import { Dashboard, Identity, request } from "./api";
 import { Empty, Panel } from "./components";
-import { Mission, MissionDetail, Target } from "./operations-api";
+import {
+  Mission,
+  MissionApproval,
+  MissionDetail,
+  Target,
+} from "./operations-api";
+import {
+  ApprovalInbox,
+  ApprovalPreviewNotice,
+  MissionApprovalPanel,
+  useApprovalPreview,
+} from "./MissionApprovals";
 import SurveyMap from "./SurveyMap";
 import PlanMap from "./PlanMap";
 import SurveyAreas from "./SurveyAreas";
@@ -86,6 +97,7 @@ export default function PrototypeWorkspace({
   const [areas, setAreas] = useState<SurveyArea[]>([]);
   const [areaPages, setAreaPages] = useState(1);
   const [assignmentId, setAssignmentId] = useState("");
+  const [editingMission, setEditingMission] = useState<Mission>();
   const [target, setTarget] = useState<Target>();
   const [history, setHistory] = useState<
     {
@@ -100,6 +112,16 @@ export default function PrototypeWorkspace({
   const operator = user.role === "mission_operator";
   const areaAccess = operator || user.role === "supervisor";
   const parent = areas.find((area) => area.id === assignmentId);
+  const planning =
+    operator &&
+    view === "Mission Planning" &&
+    user.permissions.includes("missions:plan");
+  const approvalPreview = useApprovalPreview(
+    token,
+    planning ? parent?.id : undefined,
+    points(boundaryText),
+    parent?.revision,
+  );
   const refreshAreas = useCallback(async () => {
     if (!areaAccess) return;
     try {
@@ -143,6 +165,10 @@ export default function PrototypeWorkspace({
     parentStillAssigned &&
     detail?.mission.operator_id === user.id &&
     user.permissions.includes("missions:execute");
+  const boundaryAuthorized =
+    !detail?.mission.assignment_id || detail.approval?.can_execute === true;
+  const planEditable =
+    !!detail && ["DRAFT", "READY"].includes(detail.mission.state);
   const refreshMissions = useCallback(async () => {
     try {
       const list = await request<Mission[]>("/missions", token);
@@ -244,29 +270,56 @@ export default function PrototypeWorkspace({
         throw new Error(
           "Select a survey area assigned by your Supervisor first.",
         );
-      const mission = await request<Mission>("/missions", token, {
-        method: "POST",
-        body: JSON.stringify({
-          name: form.get("name"),
-          area_id: form.get("area_id"),
-          assignment_id: parent.id,
-          boundary: JSON.parse(String(form.get("boundary"))),
-          waypoints: JSON.parse(String(form.get("waypoints"))),
-          altitude_m: Number(form.get("altitude")),
-          speed_m_s: Number(form.get("speed")),
-          synthetic_sensors: form.get("synthetic") === "on",
-          field_ids: form.getAll("field_ids"),
-        }),
-      });
-      setDetail(undefined);
-      setSelected(mission.id);
+      const mission = await request<Mission & { approval: MissionApproval }>(
+        editingMission ? `/missions/${editingMission.id}` : "/missions",
+        token,
+        {
+          method: editingMission ? "PUT" : "POST",
+          body: JSON.stringify({
+            name: form.get("name"),
+            area_id: form.get("area_id"),
+            assignment_id: parent.id,
+            boundary: JSON.parse(String(form.get("boundary"))),
+            waypoints: JSON.parse(String(form.get("waypoints"))),
+            altitude_m: Number(form.get("altitude")),
+            speed_m_s: Number(form.get("speed")),
+            synthetic_sensors: form.get("synthetic") === "on",
+            field_ids: form.getAll("field_ids"),
+            ...(editingMission && {
+              plan_revision: editingMission.plan_revision,
+            }),
+          }),
+        },
+      );
+      if (selected === mission.id) {
+        setDetail(
+          await request<MissionDetail>(`/missions/${mission.id}`, token),
+        );
+      } else {
+        setDetail(undefined);
+        setSelected(mission.id);
+      }
+      setEditingMission(undefined);
       await refreshMissions();
-      setMessage("Draft saved. Validate, then explicitly start when ready.");
+      setMessage(
+        mission.approval?.required && !mission.approval.can_execute
+          ? "Draft saved. Request Supervisor approval before validating or starting."
+          : "Plan saved. Validate, then explicitly start when ready.",
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
+  }
+  function editPlan(mission: Mission) {
+    if (!mission.assignment_id || mission.plan_revision === undefined) return;
+    setEditingMission(mission);
+    setAssignmentId(mission.assignment_id);
+    setBoundaryText(JSON.stringify(mission.boundary.coordinates[0]));
+    setWaypointText(JSON.stringify(mission.waypoints));
+    setMessage("");
+    onViewChange?.("Mission Planning");
   }
   async function assess(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -359,6 +412,7 @@ export default function PrototypeWorkspace({
           onLoadMore={() => setAreaPages(areaPages + 1)}
           hasMore={areas.length === areaPages * 100}
           onPlan={(area) => {
+            setEditingMission(undefined);
             setAssignmentId(area.id);
             setBoundaryText("[]");
             setWaypointText("[]");
@@ -366,30 +420,29 @@ export default function PrototypeWorkspace({
           }}
         />
       )}
-      {["Approvals", "UAV Fleet"].includes(view) && (
-        <Panel
-          title={
-            view === "Approvals"
-              ? "Mission approval policy"
-              : "Configured UAV fleet"
-          }
-        >
-          {view === "Approvals" ? (
-            <p>
-              Separate supervisor approval is not configured in this prototype.
-              Assigned operators validate their mission plans; assignment
-              management is available in Survey Areas.
-            </p>
-          ) : (
-            <>
-              <strong>sitl-01 - PX4 x500 / Gazebo</strong>
-              <p>
-                One isolated simulated vehicle. View Missions Overview for
-                assigned mission status. Physical aircraft are outside this
-                prototype.
-              </p>
-            </>
-          )}
+      {user.role === "supervisor" &&
+        ["Dashboard", "Approvals"].includes(view) &&
+        (user.permissions.includes("missions:approve") ? (
+          <ApprovalInbox token={token} supervisor />
+        ) : (
+          view === "Approvals" && (
+            <Panel title="Mission Approval Requests">
+              <Empty>Supervisor approval permission is required.</Empty>
+            </Panel>
+          )
+        ))}
+      {operator &&
+        user.permissions.includes("missions:read") &&
+        ["Dashboard", "Alerts"].includes(view) && (
+          <ApprovalInbox token={token} supervisor={false} />
+        )}
+      {view === "UAV Fleet" && (
+        <Panel title="Configured UAV fleet">
+          <strong>sitl-01 - PX4 x500 / Gazebo</strong>
+          <p>
+            One isolated simulated vehicle. View Missions Overview for assigned
+            mission status. Physical aircraft are outside this prototype.
+          </p>
         </Panel>
       )}
       {!["Survey Areas", "Approvals", "UAV Fleet"].includes(view) && (
@@ -407,13 +460,23 @@ export default function PrototypeWorkspace({
             </Panel>
           ) : (
             <>
-              {operator && view === "Mission Planning" && (
-                <Panel title="Create simulated survey mission">
-                  <form onSubmit={create}>
+              {planning && (
+                <Panel
+                  title={
+                    editingMission
+                      ? "Edit mission plan"
+                      : "Create simulated survey mission"
+                  }
+                >
+                  <form
+                    key={editingMission?.id ?? "new-mission"}
+                    onSubmit={create}
+                  >
                     <label>
                       Assigned survey area
                       <select
                         required
+                        disabled={!!editingMission}
                         value={assignmentId}
                         onChange={(event) => {
                           setAssignmentId(event.target.value);
@@ -448,7 +511,7 @@ export default function PrototypeWorkspace({
                           name="name"
                           required
                           maxLength={100}
-                          defaultValue="SITL survey"
+                          defaultValue={editingMission?.name ?? "SITL survey"}
                         />
                       </label>
                       <label>
@@ -457,7 +520,9 @@ export default function PrototypeWorkspace({
                           name="area_id"
                           required
                           pattern="[a-zA-Z0-9_-]+"
-                          defaultValue="sitl-area-a"
+                          defaultValue={
+                            editingMission?.area_id ?? "sitl-area-a"
+                          }
                         />
                       </label>
                       <label>
@@ -468,7 +533,7 @@ export default function PrototypeWorkspace({
                           min={2}
                           max={8}
                           step="0.5"
-                          defaultValue={5}
+                          defaultValue={editingMission?.altitude_m ?? 5}
                         />
                       </label>
                       <label>
@@ -479,7 +544,7 @@ export default function PrototypeWorkspace({
                           min="0.5"
                           max={3}
                           step="0.5"
-                          defaultValue={2}
+                          defaultValue={editingMission?.speed_m_s ?? 2}
                         />
                       </label>
                     </div>
@@ -493,7 +558,22 @@ export default function PrototypeWorkspace({
                         setWaypointText(JSON.stringify(value))
                       }
                       assignedBoundary={parent?.boundary}
+                      outsideGeometry={
+                        approvalPreview?.preview?.required
+                          ? approvalPreview.preview.outside_geometry
+                          : undefined
+                      }
                     />
+                    {approvalPreview?.preview && (
+                      <ApprovalPreviewNotice
+                        preview={approvalPreview.preview}
+                      />
+                    )}
+                    {approvalPreview?.error && (
+                      <p role="status" className="approval-notice">
+                        {approvalPreview.error}
+                      </p>
+                    )}
                     <label>
                       Boundary · closed [longitude, latitude] ring
                       <textarea
@@ -517,12 +597,31 @@ export default function PrototypeWorkspace({
                       />
                     </label>
                     <label className="check-label">
-                      <input name="synthetic" type="checkbox" defaultChecked />
+                      <input
+                        name="synthetic"
+                        type="checkbox"
+                        defaultChecked={
+                          editingMission?.synthetic_sensors ?? true
+                        }
+                      />
                       Use mock GPR/metal sensor data and synthetic detections
                     </label>
                     <label>
                       Assigned Field Personnel
-                      <select name="field_ids" multiple>
+                      <select
+                        name="field_ids"
+                        multiple
+                        defaultValue={editingMission?.field_ids ?? []}
+                      >
+                        {editingMission?.field_ids
+                          .filter(
+                            (id) => !people.some((person) => person.id === id),
+                          )
+                          .map((id) => (
+                            <option key={id} value={id}>
+                              Previously assigned Field Personnel · {id}
+                            </option>
+                          ))}
                         {people
                           .filter((p) => p.role === "field_personnel")
                           .map((p) => (
@@ -538,8 +637,22 @@ export default function PrototypeWorkspace({
                       fixtures, not physical sensor measurements.
                     </p>
                     <button className="primary" disabled={busy || !parent}>
-                      Save draft mission
+                      {editingMission
+                        ? "Save revised plan"
+                        : "Save draft mission"}
                     </button>
+                    {editingMission && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingMission(undefined);
+                          setBoundaryText("[]");
+                          setWaypointText("[]");
+                        }}
+                      >
+                        Cancel plan edit
+                      </button>
+                    )}
                   </form>
                 </Panel>
               )}
@@ -616,6 +729,31 @@ export default function PrototypeWorkspace({
                       <p role="alert">{detail.mission.error}</p>
                     )}
                   </div>
+                  {operator &&
+                    detail.approval &&
+                    (showCommands || view === "Alerts") && (
+                      <MissionApprovalPanel
+                        key={detail.mission.id}
+                        token={token}
+                        missionId={detail.mission.id}
+                        approval={detail.approval}
+                        canRequest={canPlan && planEditable}
+                        onUpdated={(approval) =>
+                          setDetail((current) =>
+                            current?.mission.id === detail.mission.id
+                              ? {
+                                  ...current,
+                                  approval,
+                                  mission: {
+                                    ...current.mission,
+                                    state: "DRAFT",
+                                  },
+                                }
+                              : current,
+                          )
+                        }
+                      />
+                    )}
                   {showCommands && (canCommand || canPlan) && (
                     <Panel title="Assigned operator commands">
                       <div className="command-row">
@@ -623,6 +761,7 @@ export default function PrototypeWorkspace({
                           disabled={
                             busy ||
                             !canPlan ||
+                            !boundaryAuthorized ||
                             !["DRAFT", "READY"].includes(detail.mission.state)
                           }
                           onClick={() => act("validate")}
@@ -634,12 +773,25 @@ export default function PrototypeWorkspace({
                           disabled={
                             busy ||
                             !canCommand ||
+                            !boundaryAuthorized ||
                             detail.mission.state !== "READY"
                           }
                           onClick={() => act("start")}
                         >
                           Start simulated mission
                         </button>
+                        {canPlan &&
+                          planEditable &&
+                          detail.mission.assignment_id &&
+                          detail.mission.plan_revision !== undefined && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => editPlan(detail.mission)}
+                            >
+                              Edit mission plan
+                            </button>
+                          )}
                         <button
                           disabled={
                             busy ||

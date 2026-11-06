@@ -1,10 +1,44 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  localStorage.removeItem("terraguavd.theme");
+  delete document.documentElement.dataset.theme;
+});
+it("follows the system palette, then persists an explicit theme and matching logo", () => {
+  let dark = false;
+  const query = new EventTarget() as MediaQueryList;
+  Object.defineProperty(query, "matches", { get: () => dark });
+  vi.stubGlobal("matchMedia", () => query);
+  const app = render(<App />);
+  const theme = screen.getByRole("combobox", { name: "Appearance theme" });
+  const logo = () =>
+    screen.getByRole("link", { name: "TerraGuavd" }).querySelector("img");
+  expect(theme).toHaveValue("system");
+  expect(logo()).toHaveAttribute("src", "/brand/terraguavd-ivory.png");
+  dark = true;
+  act(() => {
+    query.dispatchEvent(new Event("change"));
+  });
+  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+  expect(logo()).toHaveAttribute("src", "/brand/terraguavd-evergreen.png");
+  fireEvent.change(theme, { target: { value: "light" } });
+  expect(document.documentElement).toHaveAttribute("data-theme", "light");
+  app.unmount();
+  render(<App />);
+  expect(
+    screen.getByRole("combobox", { name: "Appearance theme" }),
+  ).toHaveValue("light");
+  expect(document.documentElement).toHaveAttribute("data-theme", "light");
 });
 describe("role workspaces", () => {
   for (const [role, title] of Object.entries({
@@ -157,7 +191,14 @@ describe("role workspaces", () => {
     fireEvent.submit(
       screen.getByRole("button", { name: "Sign in" }).closest("form")!,
     );
+    fireEvent.click(await screen.findByRole("button", { name: "More" }));
+    expect(
+      screen.getByRole("combobox", { name: "Appearance theme" }),
+    ).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Alerts" }));
+    expect(
+      screen.queryByRole("combobox", { name: "Appearance theme" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Request mission stop" }),
     ).toBeDisabled();

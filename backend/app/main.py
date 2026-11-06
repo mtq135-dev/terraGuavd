@@ -9,6 +9,7 @@ from sqlalchemy import select, text, delete
 
 from .models import AuditEvent, AuthSession, User
 from . import operations
+from . import mission_approvals
 from . import survey_areas
 from .db import engine
 from .schemas import Dashboard, Identity, Role, SessionToken
@@ -28,6 +29,7 @@ async def lifespan(app):
 app = FastAPI(title="TerraGuavd API", version="0.2.0", description="Isolated SITL survey prototype. No physical UAV integration.",lifespan=lifespan)
 # Static command endpoints must precede the parameterized command fallback.
 operations.router.routes.sort(key=lambda route: '{command}' in route.path)
+app.include_router(mission_approvals.router)
 app.include_router(operations.router)
 app.include_router(survey_areas.router)
 

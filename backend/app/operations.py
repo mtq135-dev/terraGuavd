@@ -4,7 +4,6 @@ import csv
 from datetime import UTC, datetime
 import io
 import json
-import math
 import threading
 import time
 from typing import Annotated, Literal
@@ -17,12 +16,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from .coverage import calculate, store_position
 from .db import SessionLocal
+from . import mission_approvals
 from .models import AuthSession, User
 from .operations_models import AnalystReview, Detection, Mission, MissionEvent, Observation, SurveyAttempt, VehicleLease
-from .operations_schemas import Assignment, MissionPlan, ReviewInput, StopRequest
+from .operations_schemas import Assignment, MissionPlan, MissionUpdate, ReviewInput, StopRequest
 from .runtime import runtime
-from .survey_areas import ACTIVE, check_mission_area, get_area
-from .security import effective_permissions, Db, ROLE_PERMISSIONS, audit, current_user, digest, require
+from .survey_areas import ACTIVE, get_area
+from .security import effective_permissions, Db, audit, current_user, digest, require
 from terraguavd_detection.processing import VERSION, fixture, score, valid_footprint, mock_classification
 
 router = APIRouter(prefix='/api/v1')
@@ -72,7 +72,7 @@ def get_mission(db, mission_id, user=None, lock=False):
 
 
 def operator(user, mission, permission='missions:execute'):
-    if permission not in effective_permissions(user) or mission.operator_id != user.id:
+    if user.role != 'mission_operator' or permission not in effective_permissions(user) or mission.operator_id != user.id:
         raise HTTPException(403, 'Only the assigned Mission Operator may command this simulation')
 
 
@@ -90,18 +90,24 @@ def visible_missions(db, user):
     return [row for row in rows if allowed(user, row)]
 
 
-def validate_geometry(db, mission):
+def validate_geometry(db, mission, *, require_approval=True):
     polygon = json.dumps(mission.boundary)
     route = json.dumps({'type':'LineString','coordinates':mission.waypoints})
     check = db.execute(text('''WITH g AS (SELECT ST_SetSRID(ST_GeomFromGeoJSON(:polygon),4326) p,
         ST_SetSRID(ST_GeomFromGeoJSON(:route),4326) r)
-        SELECT ST_IsValid(p), ST_Area(p::geography), ST_Covers(p,r) FROM g'''),
+        SELECT CASE WHEN ST_IsValid(p) AND ST_IsValid(r) THEN
+          ST_Area(p::geography)>0 AND ST_Covers(p,r) ELSE FALSE END FROM g'''),
         {'polygon':polygon,'route':route}).one()
-    if not check[0] or check[1] <= 0 or not check[2]:
+    if not check[0]:
         raise HTTPException(422, 'Use a valid nonzero-area polygon containing the entire route')
-    check_mission_area(db,mission)
+    parent = get_area(db, mission.assignment_id, lock=True) if mission.assignment_id else None
+    if parent and parent.operator_id != mission.operator_id:
+        raise HTTPException(409, 'Mission operator must match the survey area assignment')
+    if require_approval:
+        mission_approvals.enforce(db, mission, parent)
     db.execute(text('UPDATE missions SET planned_geometry=ST_SetSRID(ST_GeomFromGeoJSON(:geometry),4326) WHERE id=:id'),
                {'geometry':polygon,'id':mission.id})
+    return parent
 
 
 def validate_fields(db, field_ids):
@@ -134,13 +140,33 @@ def finish(db, mission, state, error=None):
     db.commit()
 
 
+def check_sitl(mission):
+    if mission.runtime != 'px4-gazebo' or mission.uav_id != 'sitl-01':
+        raise HTTPException(409, 'Only the configured PX4/Gazebo simulation vehicle can execute missions')
+
+
+def verify_runner_authority(db, mission):
+    actor = db.get(User, mission.operator_id, populate_existing=True)
+    if not actor or not actor.active:
+        raise HTTPException(403, 'Assigned operator is unavailable')
+    operator(actor, mission)
+    check_sitl(mission)
+    validate_geometry(db, mission)
+    lease = db.scalar(select(VehicleLease).where(VehicleLease.id == 'sitl-01').with_for_update())
+    if not lease or lease.mission_id != mission.id:
+        raise HTTPException(409, 'Mission does not own the simulation vehicle lease')
+
+
 def run_mission(mission_id):
     """Single-worker prototype runner; the database vehicle lease prevents duplicate starts."""
+    runtime_attempted = False
     try:
         with SessionLocal() as db:
             mission = get_mission(db, mission_id,lock=True)
             if mission.state!='STARTING_SIMULATION':
                 return
+            verify_runner_authority(db, mission)
+            runtime_attempted = True
             runtime.call('/runtime/start', {})
             transition(db, mission, 'WAITING_FOR_VEHICLE', 'Waiting for actual SITL MAVLink position and heartbeat')
             db.commit()
@@ -160,12 +186,13 @@ def run_mission(mission_id):
             if mission.state!='WAITING_FOR_VEHICLE':
                 return
             transition(db, mission, 'UPLOADING', 'Uploading validated simulator-only mission')
-            plan = {'waypoints':mission.waypoints,'altitude_m':mission.altitude_m,'speed_m_s':mission.speed_m_s}
             db.commit()
         with SessionLocal() as db:
             mission = get_mission(db, mission_id,lock=True)
             if mission.state!='UPLOADING':
                 return
+            verify_runner_authority(db, mission)
+            plan = {'waypoints':mission.waypoints,'altitude_m':mission.altitude_m,'speed_m_s':mission.speed_m_s}
             runtime.call('/mission/upload', plan)
             # Lock prevents recovery or another command from reviving an interrupted attempt.
             runtime.call('/mission/start', {})
@@ -214,14 +241,16 @@ def run_mission(mission_id):
         raise RuntimeError('Simulator mission exceeded the 20 minute prototype limit')
     except Exception as exc:
         # Stop the isolated simulator on failures so no orphaned simulated flight remains.
-        try:
-            runtime.call('/runtime/stop', {})
-        except Exception:
-            pass
+        if runtime_attempted:
+            try:
+                runtime.call('/runtime/stop', {})
+            except Exception:
+                pass
         with SessionLocal() as db:
             mission = get_mission(db, mission_id, lock=True)
-            if mission.state not in TERMINAL:
-                finish(db, mission, 'FAILED', str(exc)[:1000])
+            if mission.state in ACTIVE:
+                reason = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                finish(db, mission, 'FAILED', str(reason)[:1000])
 
 
 def schedule(mission_id):
@@ -259,11 +288,9 @@ def mission_users(db: Db, user: Identity):
 
 @router.post('/missions', status_code=201)
 def create_mission(body: MissionPlan, db: Db, user: Identity):
-    if 'missions:plan' not in effective_permissions(user):
+    if user.role != 'mission_operator' or 'missions:plan' not in effective_permissions(user):
         raise HTTPException(403,'Mission planning permission required')
     get_area(db,body.assignment_id,user,lock=True)
-    if body.boundary[0] != body.boundary[-1]:
-        raise HTTPException(422, 'Close the polygon by repeating its first coordinate')
     validate_fields(db,body.field_ids)
     mission = Mission(id=identifier(),name=body.name.strip(),area_id=body.area_id,assignment_id=body.assignment_id,operator_id=user.id,
         field_ids=body.field_ids,boundary={'type':'Polygon','coordinates':[body.boundary]},
@@ -273,11 +300,41 @@ def create_mission(body: MissionPlan, db: Db, user: Identity):
         raise HTTPException(422, 'Mission name is required')
     db.add(mission)
     db.flush()
-    validate_geometry(db,mission)
+    parent = validate_geometry(db, mission, require_approval=False)
     event(db,mission,'created','Draft simulation plan created; no flight command issued')
     audit(db,user.id,'mission_created')
     db.commit()
-    return serialize(mission)
+    return {**serialize(mission), 'approval': mission_approvals.context(db, mission, parent)}
+
+
+@router.put('/missions/{mission_id}')
+def update_mission(mission_id: str, body: MissionUpdate, db: Db, user: Identity):
+    mission = get_mission(db, mission_id, user, lock=True)
+    operator(user, mission, 'missions:plan')
+    if mission.state not in mission_approvals.EDITABLE:
+        raise HTTPException(409, 'Only unstarted plans can be edited')
+    if mission.plan_revision != body.plan_revision:
+        raise HTTPException(409, 'Mission changed. Reload before editing.')
+    if mission.assignment_id != body.assignment_id:
+        raise HTTPException(409, 'Create a new mission to select a different parent survey area')
+    validate_fields(db, body.field_ids)
+    if not body.name.strip():
+        raise HTTPException(422, 'Mission name is required')
+    plan = body.model_dump(mode='json', exclude={'plan_revision', 'assignment_id'})
+    plan['name'] = body.name.strip()
+    plan['boundary'] = {'type': 'Polygon', 'coordinates': [plan['boundary']]}
+    changed = any(getattr(mission, key) != value for key, value in plan.items())
+    if changed:
+        for key, value in plan.items():
+            setattr(mission, key, value)
+    parent = validate_geometry(db, mission, require_approval=False)
+    if changed:
+        mission.plan_revision += 1
+        mission_approvals.invalidate(db, mission, user, 'Mission plan changed; previous approval no longer applies')
+        transition(db, mission, 'DRAFT', 'Mission plan changed; validate the revised plan before starting')
+        audit(db, user.id, 'mission_plan_updated')
+    db.commit()
+    return {**serialize(mission), 'approval': mission_approvals.context(db, mission, parent)}
 
 
 @router.get('/missions/{mission_id}/scene')
@@ -301,9 +358,11 @@ def detail(mission_id: str, db: Db, user: Identity):
     targets=db.scalars(select(Detection).where(Detection.mission_id==mission_id).order_by(Detection.created_at)).all()
     reviews=db.scalars(select(AnalystReview).where(AnalystReview.detection_id.in_([row.id for row in targets]))).all() if targets else []
     events=db.scalars(select(MissionEvent).where(MissionEvent.mission_id==mission_id).order_by(MissionEvent.created_at.desc()).limit(100)).all()
+    parent = get_area(db, mission.assignment_id) if mission.assignment_id else None
+    approval = mission_approvals.context(db, mission, parent) if mission_approvals.visible_to(user, mission, parent) else None
     return {'mission':serialize(mission),'observations':[serialize(row) for row in observations],
             'detections':[serialize(row) for row in targets],'reviews':[serialize(row) for row in reviews],
-            'events':[serialize(row) for row in events],'coverage':calculate(db,mission_id),'notice':NOTICE}
+            'events':[serialize(row) for row in events],'coverage':calculate(db,mission_id),'notice':NOTICE,'approval':approval}
 
 
 @router.post('/missions/{mission_id}/assign')
@@ -319,8 +378,13 @@ def assign(mission_id: str, body: Assignment, db: Db, user: Identity):
     if not person or not person.active or person.role!='mission_operator':
         raise HTTPException(422,'Select an active Mission Operator')
     validate_fields(db,body.field_ids)
+    changed = mission.operator_id != person.id or mission.field_ids != body.field_ids
     mission.operator_id=person.id
     mission.field_ids=body.field_ids
+    if changed:
+        mission.plan_revision += 1
+        mission.state = 'DRAFT'
+        mission_approvals.invalidate(db, mission, user, 'Mission assignment changed; previous approval no longer applies')
     event(db,mission,'assigned','Supervisor updated mission assignments')
     audit(db,user.id,'mission_assigned')
     db.commit()
@@ -343,16 +407,17 @@ def validate(mission_id: str, db: Db, user: Identity):
 def start(mission_id: str, db: Db, user: Identity):
     mission=get_mission(db,mission_id,user,lock=True)
     operator(user,mission)
-    lease=db.scalar(select(VehicleLease).where(VehicleLease.id=='sitl-01').with_for_update())
-    if not lease:
-        raise HTTPException(503,'Run database migrations first')
     if mission.state in ACTIVE:
         return serialize(mission)  # Repeated explicit start is idempotent.
     if mission.state!='READY':
         raise HTTPException(409,'Validate this draft plan before starting')
+    check_sitl(mission)
+    validate_geometry(db,mission)
+    lease=db.scalar(select(VehicleLease).where(VehicleLease.id=='sitl-01').with_for_update())
+    if not lease:
+        raise HTTPException(503,'Run database migrations first')
     if lease.mission_id:
         raise HTTPException(409,'The simulator is reserved by another active mission')
-    validate_geometry(db,mission)
     lease.mission_id=mission.id
     mission.started_at=now()
     transition(db,mission,'STARTING_SIMULATION','Explicit assigned-operator start accepted')
@@ -432,8 +497,11 @@ def area_history(area_id: str, db: Db, user: Identity, offset: int=0, limit: int
 @router.get('/alerts')
 def alert_list(db: Db, user: Identity):
     ids=[row.id for row in visible_missions(db,user)]
+    kinds = ['potential_target', 'stop_requested', 'failed', 'interrupted']
+    if user.role == 'mission_operator':
+        kinds += ['approval_approved', 'approval_rejected', 'approval_invalidated']
     return [serialize(row) for row in db.scalars(select(MissionEvent).where(MissionEvent.mission_id.in_(ids),
-        MissionEvent.kind.in_(['potential_target','stop_requested','failed','interrupted'])).order_by(MissionEvent.created_at.desc()).limit(100))]
+        MissionEvent.kind.in_(kinds)).order_by(MissionEvent.created_at.desc()).limit(100))]
 
 
 @router.get('/missions/{mission_id}/report')

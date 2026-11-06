@@ -10,13 +10,17 @@ export default function PlanMap({
   onWaypoints,
   assignedBoundary,
   boundaryOnly = false,
+  outsideGeometry,
+  readOnly = false,
 }: {
   boundary: Point[];
   waypoints: Point[];
-  onBoundary: (points: Point[]) => void;
-  onWaypoints: (points: Point[]) => void;
+  onBoundary?: (points: Point[]) => void;
+  onWaypoints?: (points: Point[]) => void;
   assignedBoundary?: GeoJSON.Polygon;
   boundaryOnly?: boolean;
+  outsideGeometry?: GeoJSON.Geometry;
+  readOnly?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | undefined>(undefined);
@@ -48,14 +52,14 @@ export default function PlanMap({
     };
   }, []);
   useEffect(() => {
-    if (!map.current) return;
+    if (!map.current || readOnly) return;
     const clicked = (event: L.LeafletMouseEvent) => {
       const point: Point = [
         Number(event.latlng.lng.toFixed(7)),
         Number(event.latlng.lat.toFixed(7)),
       ];
       if (mode === "waypoints") {
-        onWaypoints([...waypoints, point]);
+        onWaypoints?.([...waypoints, point]);
       } else {
         const open =
           boundary.length > 1 &&
@@ -64,14 +68,14 @@ export default function PlanMap({
             ? boundary.slice(0, -1)
             : boundary;
         const points = [...open, point];
-        onBoundary(points.length > 1 ? [...points, points[0]] : points);
+        onBoundary?.(points.length > 1 ? [...points, points[0]] : points);
       }
     };
     map.current.on("click", clicked);
     return () => {
       map.current?.off("click", clicked);
     };
-  }, [boundary, waypoints, mode, onBoundary, onWaypoints]);
+  }, [boundary, waypoints, mode, onBoundary, onWaypoints, readOnly]);
   useEffect(() => {
     if (!layer.current) return;
     layer.current.clearLayers();
@@ -84,9 +88,14 @@ export default function PlanMap({
           dashArray: "7 5",
         },
       }).addTo(layer.current);
-      const key = JSON.stringify(assignedBoundary);
+      const key = JSON.stringify(
+        readOnly ? [assignedBoundary, boundary] : assignedBoundary,
+      );
       if (fitted.current !== key) {
-        map.current?.fitBounds(context.getBounds(), {
+        const bounds = context.getBounds();
+        if (readOnly)
+          boundary.forEach(([x, y]) => bounds.extend(L.latLng(y, x)));
+        map.current?.fitBounds(bounds, {
           padding: [20, 20],
           maxZoom: 19,
         });
@@ -99,6 +108,16 @@ export default function PlanMap({
         layer.current,
       );
     else L.polyline(ring, { color: "#5ba9f0" }).addTo(layer.current);
+    if (outsideGeometry) {
+      L.geoJSON(outsideGeometry, {
+        style: {
+          color: "#b63846",
+          weight: 3,
+          fillOpacity: 0.26,
+          dashArray: "4 3",
+        },
+      }).addTo(layer.current);
+    }
     L.polyline(
       waypoints.map(([x, y]) => L.latLng(y, x)),
       { color: "#e1cc8e", dashArray: "5 4" },
@@ -108,45 +127,53 @@ export default function PlanMap({
         .bindTooltip(`Waypoint ${index + 1}`)
         .addTo(layer.current!),
     );
-  }, [boundary, waypoints, assignedBoundary, boundaryOnly]);
+  }, [boundary, waypoints, assignedBoundary, outsideGeometry, readOnly]);
   return (
     <div>
-      <div className="command-row">
-        <button
-          type="button"
-          aria-pressed={mode === "boundary"}
-          onClick={() => setMode("boundary")}
-        >
-          Draw boundary
-        </button>
-        {!boundaryOnly && (
+      {!readOnly && (
+        <div className="command-row">
           <button
             type="button"
-            aria-pressed={mode === "waypoints"}
-            onClick={() => setMode("waypoints")}
+            aria-pressed={mode === "boundary"}
+            onClick={() => setMode("boundary")}
           >
-            Add waypoints
+            Draw boundary
           </button>
-        )}
-        <button type="button" onClick={() => onBoundary([])}>
-          Clear boundary
-        </button>
-        {!boundaryOnly && (
-          <button type="button" onClick={() => onWaypoints([])}>
-            Clear waypoints
+          {!boundaryOnly && (
+            <button
+              type="button"
+              aria-pressed={mode === "waypoints"}
+              onClick={() => setMode("waypoints")}
+            >
+              Add waypoints
+            </button>
+          )}
+          <button type="button" onClick={() => onBoundary?.([])}>
+            Clear boundary
           </button>
-        )}
-      </div>
+          {!boundaryOnly && (
+            <button type="button" onClick={() => onWaypoints?.([])}>
+              Clear waypoints
+            </button>
+          )}
+        </div>
+      )}
       <p className="panel-note">
-        Click map vertices in order. Boundary closes automatically.{" "}
+        {!readOnly &&
+          "Click map vertices in order. Boundary closes automatically. "}
         {boundaryOnly
           ? "Draw the large assignment area; no flight is created."
-          : "Draw a smaller mission and route inside the purple assigned boundary. Flight execution remains limited to the simulator home."}
+          : "Purple dashed: assigned area. Blue: mission boundary. Gold dashed: route."}
+        {outsideGeometry && " Red dashed: portion outside the assigned area."}
       </p>
       <div
         ref={host}
         className="live-map"
-        aria-label="Interactive survey planning map"
+        aria-label={
+          readOnly
+            ? "Submitted mission boundary map"
+            : "Interactive survey planning map"
+        }
       />
     </div>
   );

@@ -1,6 +1,6 @@
 """Persistent prototype records. Geometry columns are managed by PostGIS migration."""
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
@@ -21,6 +21,7 @@ class Mission(Base):
     runtime: Mapped[str] = mapped_column(String(32), default="px4-gazebo")
     uav_id: Mapped[str] = mapped_column(String(40), default="sitl-01")
     synthetic_sensors: Mapped[bool] = mapped_column(Boolean, default=False)
+    plan_revision: Mapped[int] = mapped_column(Integer, default=1, server_default='1')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -34,6 +35,33 @@ class MissionEvent(Base):
     kind: Mapped[str] = mapped_column(String(40))
     detail: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey('users.id'))
+    actor_username: Mapped[str | None] = mapped_column(String(80))
+    priority: Mapped[str | None] = mapped_column(String(16))
+
+
+class MissionApprovalRequest(Base):
+    __tablename__ = 'mission_approval_requests'
+    __table_args__ = (
+        CheckConstraint("status IN ('Pending','Approved','Rejected','Invalidated')", name='valid_mission_approval_status'),
+        Index('mission_approval_mission_id_idx', 'mission_id'),
+        Index('mission_approval_operator_id_idx', 'operator_id'),
+        Index('mission_approval_supervisor_id_idx', 'supervisor_id'),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    mission_id: Mapped[str] = mapped_column(ForeignKey('missions.id'))
+    assignment_id: Mapped[str] = mapped_column(ForeignKey('survey_area_assignments.id'))
+    operator_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    supervisor_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    assignment_revision: Mapped[int] = mapped_column(Integer)
+    configuration_hash: Mapped[str] = mapped_column(String(64))
+    snapshot: Mapped[dict] = mapped_column(JSON)
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16))
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    decision_reason: Mapped[str | None] = mapped_column(Text)
+    decided_by: Mapped[str | None] = mapped_column(ForeignKey('users.id'))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Observation(Base):

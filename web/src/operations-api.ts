@@ -11,10 +11,63 @@ export type Mission = {
   speed_m_s: number;
   state: string;
   synthetic_sensors: boolean;
+  plan_revision?: number;
   created_at: string;
   started_at?: string;
   finished_at?: string;
   error?: string;
+};
+export type ApprovalStatus =
+  "Pending" | "Approved" | "Rejected" | "Invalidated";
+type ApprovalAssignment = {
+  id: string;
+  name: string;
+  boundary: GeoJSON.Polygon;
+  revision: number;
+  supervisor_username: string | null;
+};
+export type ApprovalRequest = {
+  id: string;
+  status: ApprovalStatus;
+  reason: string;
+  requested_at: string;
+  decision_reason: string | null;
+  decided_at: string | null;
+  snapshot: {
+    assignment: ApprovalAssignment;
+    configuration: Pick<
+      Mission,
+      | "id"
+      | "name"
+      | "boundary"
+      | "waypoints"
+      | "altitude_m"
+      | "speed_m_s"
+      | "synthetic_sensors"
+    >;
+    outside_geometry: GeoJSON.Geometry;
+    outside_m2: number;
+  };
+};
+export type ApprovalPreview = {
+  required: boolean;
+  outside_geometry: GeoJSON.Geometry;
+  outside_m2: number;
+};
+export type MissionApproval = ApprovalPreview & {
+  status: ApprovalStatus | "Not Required" | null;
+  can_execute: boolean;
+  warning: string | null;
+  assignment: ApprovalAssignment | null;
+  request: ApprovalRequest | null;
+  history: ApprovalRequest[];
+};
+export type ApprovalListItem = {
+  request: ApprovalRequest;
+  status: ApprovalStatus;
+  current: boolean;
+  mission: Pick<Mission, "id" | "name">;
+  operator_username: string | null;
 };
 export type Observation = {
   id: string;
@@ -47,6 +100,7 @@ export type Target = {
 };
 export type MissionDetail = {
   mission: Mission;
+  approval?: MissionApproval | null;
   observations: Observation[];
   detections: Target[];
   reviews: {

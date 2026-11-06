@@ -12,7 +12,7 @@ from sqlalchemy import select, text
 
 from .models import User
 from .operations_models import Mission, MissionEvent, SurveyAreaAssignment, SurveyAreaEvent, SurveyAttempt
-from .security import effective_permissions, Db, ROLE_PERMISSIONS, audit, current_user
+from .security import effective_permissions, Db, audit, current_user
 from terraguavd_detection.processing import COVERAGE_VERSION
 
 ACTIVE = {'STARTING_SIMULATION','WAITING_FOR_VEHICLE','UPLOADING','EXECUTING','PAUSED','RESUMING','CANCELLING'}
@@ -84,19 +84,6 @@ def validate_area(db, geometry):
         SELECT ST_IsValid(p), ST_Area(p::geography) FROM g'''),{'g':json.dumps(geometry)}).one()
     if not valid or not 10<=area<=100_000_000:
         raise HTTPException(422,'Use a valid polygon of 10 m² to 100 km²')
-
-
-def check_mission_area(db, mission):
-    # Pre-upgrade unassigned missions retain their original workflow/history.
-    if not mission.assignment_id:
-        return
-    parent=get_area(db,mission.assignment_id,lock=True)
-    if parent.operator_id!=mission.operator_id:
-        raise HTTPException(409,'Mission operator must match the survey area assignment')
-    if not db.execute(text('''SELECT ST_Covers(boundary_geometry,
-        ST_SetSRID(ST_GeomFromGeoJSON(:g),4326)) FROM survey_area_assignments WHERE id=:id'''),
-        {'id':parent.id,'g':json.dumps(mission.boundary)}).scalar_one():
-        raise HTTPException(422,'The entire mission boundary must be inside its assigned survey area')
 
 
 def progress(db, area_id):
@@ -181,6 +168,8 @@ def create_area(body: AreaInput,db: Db,user: Identity):
 
 @router.put('/{area_id}')
 def update_area(area_id: str,body: AreaUpdate,db: Db,user: Identity):
+    from .mission_approvals import EDITABLE, invalidate
+
     permission(user,True)
     row=get_area(db,area_id,user,lock=True)
     if row.revision!=body.revision:
@@ -188,24 +177,29 @@ def update_area(area_id: str,body: AreaUpdate,db: Db,user: Identity):
     valid_operator(db,body.operator_id)
     geometry=polygon(body)
     validate_area(db,geometry)
-    missions=db.scalars(select(Mission).where(Mission.assignment_id==row.id).with_for_update()).all()
+    missions=db.scalars(select(Mission).where(Mission.assignment_id==row.id).order_by(Mission.id).with_for_update()).all()
     if any(m.state in ACTIVE for m in missions):
         raise HTTPException(409,'Wait for active missions to finish before modifying this assignment')
-    if db.execute(text('''SELECT EXISTS(SELECT 1 FROM missions WHERE assignment_id=:id AND
-        NOT ST_Covers(ST_SetSRID(ST_GeomFromGeoJSON(:g),4326),planned_geometry))'''),
+    if db.execute(text('''SELECT EXISTS(SELECT 1 FROM missions m JOIN survey_area_assignments a ON m.assignment_id=a.id
+        WHERE a.id=:id AND ST_Covers(a.boundary_geometry,m.planned_geometry)
+        AND NOT ST_Covers(ST_SetSRID(ST_GeomFromGeoJSON(:g),4326),m.planned_geometry))'''),
         {'id':row.id,'g':json.dumps(geometry)}).scalar_one():
-        raise HTTPException(422,'Updated area must still contain every linked mission boundary; survey history is preserved')
+        raise HTTPException(422,'Updated area must still contain previously contained mission boundaries; survey history is preserved')
     reassign=row.operator_id!=body.operator_id
     row.name, row.description, row.operator_id, row.boundary, row.deadline = body.name,body.description,body.operator_id,geometry,body.deadline
     row.revision+=1
     row.updated_at=datetime.now(UTC)
-    if reassign:
-        for mission in missions:
-            if mission.state in {'DRAFT','READY'}:
-                mission.operator_id=row.operator_id
-                mission.state='DRAFT'
-                db.add(MissionEvent(id=str(uuid4()),mission_id=mission.id,kind='assigned',
-                    detail='Survey area reassigned by Supervisor; draft requires revalidation',created_at=row.updated_at))
+    for mission in missions:
+        if mission.state not in EDITABLE:
+            continue
+        if invalidate(db, mission, user, 'Survey area revision changed; previous approval no longer applies'):
+            mission.state = 'DRAFT'
+        if reassign:
+            mission.operator_id=row.operator_id
+            mission.plan_revision+=1
+            mission.state='DRAFT'
+            db.add(MissionEvent(id=str(uuid4()),mission_id=mission.id,kind='assigned',
+                detail='Survey area reassigned by Supervisor; draft requires revalidation',created_at=row.updated_at))
     history_event(db,row,user,'reassigned' if reassign else 'updated')
     db.commit()
     return summary(db,row)

@@ -92,11 +92,20 @@ beforeEach(() => {
     return {
       ok: true,
       json: async () =>
-        url.includes("/areas/")
-          ? []
-          : url.endsWith("/missions")
-            ? [detail.mission]
-            : structuredClone(detail),
+        url.includes("/survey-areas?")
+          ? detail.mission.assignment_id
+            ? [
+                {
+                  id: detail.mission.assignment_id,
+                  operator_id: detail.mission.operator_id,
+                },
+              ]
+            : []
+          : url.includes("/areas/") || url.includes("/mission-approvals?")
+            ? []
+            : url.endsWith("/missions")
+              ? [detail.mission]
+              : structuredClone(detail),
     };
   });
   vi.stubGlobal("fetch", fetcher);
@@ -172,6 +181,36 @@ it("requires successful validation before enabling explicit start", async () => 
       }),
     ),
   );
+});
+
+it("does not let an operator validate or start a ready plan with pending boundary approval", async () => {
+  detail.mission = {
+    ...detail.mission,
+    assignment_id: "assigned-area",
+    state: "READY",
+  };
+  detail.approval = {
+    status: "Pending",
+    required: true,
+    can_execute: false,
+    outside_geometry: mission.boundary,
+    outside_m2: 45,
+    warning: "Supervisor approval is required.",
+    assignment: null,
+    request: null,
+    history: [],
+  };
+  show("mission_operator", "operator", "Live Monitoring");
+  expect(
+    await screen.findByText("Supervisor approval is required."),
+  ).toBeVisible();
+  const start = screen.getByRole("button", { name: "Start simulated mission" });
+  expect(start).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Validate plan" })).toBeDisabled();
+  fireEvent.click(start);
+  expect(
+    fetcher.mock.calls.some(([url]) => String(url).endsWith("/start")),
+  ).toBe(false);
 });
 it("sends a field stop request without exposing flight controls", async () => {
   detail.mission.state = "EXECUTING";

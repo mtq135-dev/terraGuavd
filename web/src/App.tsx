@@ -4,6 +4,8 @@ import { Empty, Metric, Panel } from "./components";
 
 import AccountAccess from "./AccountAccess";
 import PrototypeWorkspace from "./PrototypeWorkspace";
+import { ThemeControl } from "./ThemeControl";
+import { useTheme } from "./theme";
 
 const workspaces: Record<
   string,
@@ -72,6 +74,7 @@ const workspaces: Record<
 const icons = ["⌂", "▤", "◉", "◇", "▦", "◷", "△", "≡"];
 
 export default function App() {
+  const { preference, theme, changePreference } = useTheme();
   const [token, setToken] = useState<string>();
   const [user, setUser] = useState<Identity>();
   const [data, setData] = useState<Dashboard>();
@@ -204,18 +207,24 @@ export default function App() {
   const field = user?.role === "field_personnel";
   const home = view === "Dashboard" || view === "Home";
   const show = (...views: string[]) => home || views.includes(view);
+  const themeControl = (
+    <ThemeControl preference={preference} onChange={changePreference} />
+  );
   return (
     <div className={`app ${field ? "field-app" : ""}`}>
       <header>
-        <a className="brand" href="/">
+        <a className="brand" href="/" aria-label="TerraGuavd">
           <img
             className="brand-mark"
-            src="/brand/terraguavd-mark-cream-fill.png"
+            src={`/brand/terraguavd-${theme === "dark" ? "evergreen" : "ivory"}.png`}
             alt=""
           />
-          TerraGuavd
+          <span>
+            TerraG<span className="brand-uav">uav</span>d
+          </span>
         </a>
         <span className="badge">SIMULATION ONLY</span>
+        {!field && themeControl}
         {user ? (
           <div className="account">
             <span className="avatar">
@@ -494,6 +503,9 @@ export default function App() {
                 view={view}
                 onViewChange={setView}
               />
+            )}
+            {field && view === "More" && (
+              <Panel title="Appearance">{themeControl}</Panel>
             )}
             <p className="workspace-foot">{data?.notice}</p>
           </main>
