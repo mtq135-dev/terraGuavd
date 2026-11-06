@@ -11,3 +11,6 @@ dist/
 *.db
 .dart_tool/
 build/
+docs/
+.codex-attachments/
+.diagram-revision/

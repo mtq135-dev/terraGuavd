@@ -27,3 +27,7 @@ Read APIs return area status derived from stored flight/survey facts and geometr
 
 
 Migration 0006 adds users.denied_permissions JSON, default empty. Effective permissions are the current role template minus account restrictions. GET /api/v1/admin/roles exposes templates; PUT /api/v1/admin/users/{user_id}/access updates role/active/restrictions and revokes sessions. Identity includes active and denied_permissions.
+
+Migration 0007 adds nullable actor_id (users FK), actor_username (snapshot) and priority to mission_events. POST /api/v1/missions/{id}/field-alerts requires field_personnel role, effective field_alerts:send and current mission membership; GET requires existing mission read scope. The inbox returns the newest 20 field_alert/stop_requested records and is also included in mission detail/WS/JSON reports as field_alerts. No caller can supply sender identity. Historical events remain intact.
+
+Migration 0008 adds missions.plan_revision and mission_approval_requests. Requests retain assignment/operator/responsible Supervisor foreign keys, submitted configuration and outside geometry snapshots, configuration hash, justification, status, UTC creation/decision times and decision actor/reason. Approval and execution statuses remain separate; see mission-approvals.md for invalidation and geographic credit rules.

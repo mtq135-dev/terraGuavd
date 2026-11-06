@@ -17,3 +17,17 @@ Clarification: all navy fills must be removed, including bottom bands. Active he
 Exact-reference revision: built-in imagegen edited the latest attached straight-stem logo, removing only navy bottom terrain fills to transparency while retaining cream/red shapes. Active asset: web/public/brand/terraguavd-mark-final.png. Prompt: preserve exact silhouette and straight stem; replace bottom navy bands with transparent alpha, preserve cream contours and red drone/wave, no text or navy.
 
 Color-inverted revision using built-in imagegen. Prompt: change every originally navy region to cream #efece0; change every originally cream region to transparent alpha; preserve original red UAV and wave, geometry and proportions. Active asset: web/public/brand/terraguavd-mark-cream-fill.png.
+
+Theme variants generated with built-in imagegen, preserving transparent cutouts. Active assets: web/public/brand/terraguavd-ivory.png and web/public/brand/terraguavd-evergreen.png. CSS uses resolved data-theme to switch without a backing tile.
+
+Light prompt: precise recolor of current logo; cream regions to forest green #173B35, red UAV/wave to champagne gold #B5A584; preserve original geometry and transparent regions, clean edges, no frame/text.
+
+Dark prompt: same light-logo geometry; forest-green regions to warm ivory #F7F5F1, preserve champagne-gold UAV/wave, all cutouts/background transparent.
+
+## Header wordmark
+
+The header text now uses locally bundled Audiowide lettering inspired by the supplied wordmark reference, with a slightly rising v, champagne-gold uav letters and the small Intelligent Ground Awareness tagline. Light mode uses forest-green text; Dark mode uses warm ivory. The icon artwork is unchanged. Font source: Google Fonts official google/fonts repository, ofl/audiowide; license retained at web/public/fonts/audiowide/OFL.txt. No runtime font service is used.
+
+## Reference-shaped wordmark revision
+
+The font approximation was superseded at the user's request. `web/public/brand/terraguavd-wordmark.png` contains reference-shaped lettering and tagline extracted with built-in imagegen. Prompt: extract exact TerraGuavd letterforms, ascending checkmark v, gold uav and Intelligent Ground Awareness tagline; remove background/decorations; preserve wide proportions and transparent counters. CSS alpha masks render identical geometry with forest-green or ivory ink and a gold uav region. The header link retains the accessible TerraGuavd name. The separate emblem is unchanged. The unused font files were removed. Generated dark raster attempts were not adopted; CSS ensures consistent geometry and colors across themes.

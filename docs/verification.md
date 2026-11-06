@@ -29,12 +29,12 @@ Real FastAPI/PostGIS QA service, test-only accounts in a separate disposable dat
 
 Screenshots contain test identities only and no operational mission records:
 
-- [Administrator](screenshots/administrator.jpg)
-- [Mission Operator](screenshots/mission-operator.jpg)
-- [Detection Analyst](screenshots/detection-analyst.jpg)
-- [Supervisor](screenshots/supervisor.jpg)
-- [Field Personnel overview](screenshots/field-personnel.jpg)
-- [Field Personnel alerts](screenshots/field-alerts.jpg)
+- Administrator (historical screenshot removed)
+- Mission Operator (historical screenshot removed)
+- Detection Analyst (historical screenshot removed)
+- Supervisor (historical screenshot removed)
+- Field Personnel overview (historical screenshot removed)
+- Field Personnel alerts (historical screenshot removed)
 
 Browser inspection prompted a mobile layout refinement: field lists use cards rather than desktop table headers; the narrow login header omits its secondary tagline. Shared component styles use the supplied references, with unavailable maps/sensor graphs clearly labelled rather than fabricated.
 

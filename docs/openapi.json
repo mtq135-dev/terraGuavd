@@ -6,6 +6,261 @@
     "version": "0.2.0"
   },
   "paths": {
+    "/api/v1/mission-approval-preview": {
+      "post": {
+        "tags": [
+          "Mission boundary approvals"
+        ],
+        "summary": "Preview",
+        "operationId": "preview_api_v1_mission_approval_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalPreview"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/missions/{mission_id}/approval": {
+      "get": {
+        "tags": [
+          "Mission boundary approvals"
+        ],
+        "summary": "Mission Approval",
+        "operationId": "mission_approval_api_v1_missions__mission_id__approval_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mission Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/missions/{mission_id}/approval-requests": {
+      "post": {
+        "tags": [
+          "Mission boundary approvals"
+        ],
+        "summary": "Request Approval",
+        "operationId": "request_approval_api_v1_missions__mission_id__approval_requests_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mission Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalReason"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mission-approvals": {
+      "get": {
+        "tags": [
+          "Mission boundary approvals"
+        ],
+        "summary": "List Requests",
+        "operationId": "list_requests_api_v1_mission_approvals_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mission-approvals/{request_id}/decision": {
+      "post": {
+        "tags": [
+          "Mission boundary approvals"
+        ],
+        "summary": "Decide",
+        "operationId": "decide_api_v1_mission_approvals__request_id__decision_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/missions": {
       "get": {
         "summary": "List Missions",
@@ -119,10 +374,60 @@
         ]
       }
     },
-    "/api/v1/missions/{mission_id}/scene": {
+    "/api/v1/missions/{mission_id}": {
+      "put": {
+        "summary": "Update Mission",
+        "operationId": "update_mission_api_v1_missions__mission_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mission Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MissionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
-        "summary": "Gazebo Scene",
-        "operationId": "gazebo_scene_api_v1_missions__mission_id__scene_get",
+        "summary": "Detail",
+        "operationId": "detail_api_v1_missions__mission_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -161,10 +466,10 @@
         }
       }
     },
-    "/api/v1/missions/{mission_id}": {
+    "/api/v1/missions/{mission_id}/scene": {
       "get": {
-        "summary": "Detail",
-        "operationId": "detail_api_v1_missions__mission_id__get",
+        "summary": "Gazebo Scene",
+        "operationId": "gazebo_scene_api_v1_missions__mission_id__scene_get",
         "security": [
           {
             "HTTPBearer": []
@@ -375,6 +680,106 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/missions/{mission_id}/field-alerts": {
+      "post": {
+        "summary": "Send Field Alert",
+        "operationId": "send_field_alert_api_v1_missions__mission_id__field_alerts_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mission Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FieldAlertInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldAlertOutput"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Field Alerts",
+        "operationId": "field_alerts_api_v1_missions__mission_id__field_alerts_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mission Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FieldAlertOutput"
+                  },
+                  "title": "Response Field Alerts Api V1 Missions  Mission Id  Field Alerts Get"
+                }
               }
             }
           },
@@ -1318,6 +1723,79 @@
         ],
         "title": "AccessUpdate"
       },
+      "ApprovalDecision": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "Approved",
+              "Rejected"
+            ],
+            "title": "Decision"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "ApprovalDecision"
+      },
+      "ApprovalPreview": {
+        "properties": {
+          "assignment_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Assignment Id"
+          },
+          "boundary": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "maxItems": 101,
+            "minItems": 4,
+            "title": "Boundary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "assignment_id",
+          "boundary"
+        ],
+        "title": "ApprovalPreview"
+      },
+      "ApprovalReason": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 3,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "ApprovalReason"
+      },
       "AreaInput": {
         "properties": {
           "name": {
@@ -1555,6 +2033,105 @@
         ],
         "title": "Dashboard"
       },
+      "FieldAlertInput": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 3,
+            "title": "Message"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "urgent"
+            ],
+            "title": "Priority",
+            "default": "warning"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "FieldAlertInput"
+      },
+      "FieldAlertOutput": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "mission_id": {
+            "type": "string",
+            "title": "Mission Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "field_alert",
+              "stop_requested"
+            ],
+            "title": "Kind"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "actor_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Username"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "mission_id",
+          "kind",
+          "detail",
+          "actor_id",
+          "actor_username",
+          "priority",
+          "created_at"
+        ],
+        "title": "FieldAlertOutput"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1737,6 +2314,109 @@
           "waypoints"
         ],
         "title": "MissionPlan"
+      },
+      "MissionUpdate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "assignment_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Assignment Id"
+          },
+          "area_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "title": "Area Id"
+          },
+          "boundary": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "maxItems": 101,
+            "minItems": 4,
+            "title": "Boundary"
+          },
+          "waypoints": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 2,
+            "title": "Waypoints"
+          },
+          "altitude_m": {
+            "type": "number",
+            "maximum": 8.0,
+            "minimum": 2.0,
+            "title": "Altitude M",
+            "default": 5
+          },
+          "speed_m_s": {
+            "type": "number",
+            "maximum": 3.0,
+            "minimum": 0.5,
+            "title": "Speed M S",
+            "default": 2
+          },
+          "synthetic_sensors": {
+            "type": "boolean",
+            "title": "Synthetic Sensors",
+            "default": false
+          },
+          "field_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Field Ids"
+          },
+          "plan_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Plan Revision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "assignment_id",
+          "area_id",
+          "boundary",
+          "waypoints",
+          "plan_revision"
+        ],
+        "title": "MissionUpdate"
       },
       "ReviewInput": {
         "properties": {
