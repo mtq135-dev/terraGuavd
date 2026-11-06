@@ -31,3 +31,5 @@ The header text now uses locally bundled Audiowide lettering inspired by the sup
 ## Reference-shaped wordmark revision
 
 The font approximation was superseded at the user's request. `web/public/brand/terraguavd-wordmark.png` contains reference-shaped lettering and tagline extracted with built-in imagegen. Prompt: extract exact TerraGuavd letterforms, ascending checkmark v, gold uav and Intelligent Ground Awareness tagline; remove background/decorations; preserve wide proportions and transparent counters. CSS alpha masks render identical geometry with forest-green or ivory ink and a gold uav region. The header link retains the accessible TerraGuavd name. The separate emblem is unchanged. The unused font files were removed. Generated dark raster attempts were not adopted; CSS ensures consistent geometry and colors across themes.
+
+The theme integration had restored the plain-text label. The shared web header now uses the recovered wordmark artwork again, with a compact width on desktop and a smaller lockup on phones.

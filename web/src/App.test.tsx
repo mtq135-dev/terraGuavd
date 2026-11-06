@@ -40,6 +40,15 @@ it("follows the system palette, then persists an explicit theme and matching log
   ).toHaveValue("light");
   expect(document.documentElement).toHaveAttribute("data-theme", "light");
 });
+it("omits the global simulation badge and warning banner on sign-in", () => {
+  render(<App />);
+  expect(screen.queryByText("SIMULATION ONLY")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(
+      "Potential detections are unverified. Surveyed does not mean cleared or safe.",
+    ),
+  ).not.toBeInTheDocument();
+});
 describe("role workspaces", () => {
   for (const [role, title] of Object.entries({
     administrator: "Administration",
@@ -85,9 +94,6 @@ describe("role workspaces", () => {
         await screen.findByRole("heading", { name: title }),
       ).toBeInTheDocument();
       expect(fetcher.mock.calls[2][0]).toBe(`/api/v1/dashboards/${role}`);
-      expect(
-        screen.getAllByText(/Surveyed does not mean cleared or safe/).length,
-      ).toBeGreaterThan(0);
     });
   }
   it("reports rejected login", async () => {

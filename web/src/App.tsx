@@ -219,11 +219,8 @@ export default function App() {
             src={`/brand/terraguavd-${theme === "dark" ? "evergreen" : "ivory"}.png`}
             alt=""
           />
-          <span>
-            TerraG<span className="brand-uav">uav</span>d
-          </span>
+          <span className="brand-wordmark" aria-hidden="true" />
         </a>
-        <span className="badge">SIMULATION ONLY</span>
         {!field && themeControl}
         {user ? (
           <div className="account">
@@ -239,10 +236,6 @@ export default function App() {
           <span className="muted">Survey operations platform</span>
         )}
       </header>
-      <div className="safety">
-        Potential detections are unverified. Surveyed does not mean cleared or
-        safe.
-      </div>
       {error && (
         <p role="alert" className="error">
           {error}
